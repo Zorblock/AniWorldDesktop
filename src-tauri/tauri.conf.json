@@ -19,6 +19,7 @@
   "bundle": {
     "active": true,
     "targets": "nsis",
+    "createUpdaterArtifacts": true,
     "publisher": "Zorblock",
     "copyright": "Copyright (c) 2026 Zorblock",
     "category": "Entertainment",
@@ -40,5 +41,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEwMjVEMTNFQzAyRjE3OUQKUldTZEZ5L0FQdEVsb0tac21CWDBnT21JaU1JM25sZmJqbGU1UC8vcTdJVFZUZ0MrOExXUUZUc1EK",
+      "endpoints": [
+        "https://github.com/Zorblock/AniWorldDesktop/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

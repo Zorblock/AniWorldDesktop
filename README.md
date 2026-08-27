@@ -84,14 +84,39 @@ npm run release
 Das Menü bietet Patch, Minor und Major an. Der Ablauf hält die Versionen in
 `package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock` und
 `tauri.conf.json` synchron, baut einmalig das NSIS-Setup, erstellt Release-Commit
-und Git-Tag, pusht beides und lädt Setup sowie SHA-256-Prüfsumme in ein neues
-GitHub-Release hoch. Der Git-Arbeitsbaum muss vorher sauber sein.
+und Git-Tag, pusht beides und lädt Setup, Updater-Signatur, SHA-256-Prüfsumme
+sowie `latest.json` in ein neues GitHub-Release hoch. Der Git-Arbeitsbaum muss
+vorher sauber sein.
 
 Eine sichere Vorschau ohne Änderungen, Build oder Upload ist ebenfalls möglich:
 
 ```powershell
 npm run release -- patch --dry-run
 ```
+
+## Automatische Updates
+
+Ein installierter Release-Build prüft bei jedem Programmstart einmalig
+`https://github.com/Zorblock/AniWorldDesktop/releases/latest/download/latest.json`.
+Ist dort eine höhere Version eingetragen, erscheint ein natives Fenster mit dem
+Titel `New Version <VERSION>` und Ja/Nein-Schaltflächen. Nach Zustimmung lädt
+Tauri das signierte NSIS-Setup, prüft dessen Signatur und startet die passive
+Installation. Unter Windows wird AniWorld Desktop dabei automatisch beendet.
+
+Der erste updaterfähige Installer muss einmal manuell installiert werden. Danach
+werden zukünftige Releases automatisch erkannt. Im Entwicklungsmodus ist die
+Prüfung standardmäßig deaktiviert; für einen bewussten Test kann sie so aktiviert
+werden:
+
+```powershell
+$env:ANIWORLD_UPDATE_CHECK="1"
+npm run start
+```
+
+Der private Signierschlüssel liegt ausschließlich lokal unter
+`%USERPROFILE%\.tauri\AniWorldDesktop.key`. Er darf niemals in Git eingecheckt
+werden und sollte sicher gesichert werden, weil ohne ihn keine kompatiblen
+Updates mehr veröffentlicht werden können.
 
 Die Anmeldung wird im anwendungseigenen WebView-Profil gespeichert. Die externe
 Website erhält bewusst keine Tauri-Capabilities oder Rust-Kommandos. Die RPC-

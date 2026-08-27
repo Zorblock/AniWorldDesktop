@@ -1,6 +1,7 @@
 mod adblock;
 mod anime_api;
 mod presence;
+mod updater;
 
 use adblock::{AdBlocker, CoverHandler, PageContext, PlaybackHandler};
 use presence::{Activity, DiscordPresence};
@@ -28,6 +29,8 @@ fn user_data_directory(fallback: &Path) -> PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let url = ANIWORLD_URL.parse()?;
             let data_directory = user_data_directory(app.path().app_data_dir()?.as_path());
@@ -179,6 +182,7 @@ pub fn run() {
                 playback_handler,
             )?;
             window.navigate(url)?;
+            updater::check_on_start(app.handle().clone());
 
             Ok(())
         })

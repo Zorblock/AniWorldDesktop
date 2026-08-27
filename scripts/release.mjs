@@ -184,6 +184,10 @@ function findInstaller(version) {
   return matches.length === 1 ? matches[0] : undefined;
 }
 
+function githubAssetName(fileName) {
+  return fileName.replaceAll(" ", ".");
+}
+
 function writeChecksum(installerPath) {
   const checksum = createHash("sha256")
     .update(readFileSync(installerPath))
@@ -191,10 +195,29 @@ function writeChecksum(installerPath) {
   const checksumPath = `${installerPath}.sha256.txt`;
   writeFileSync(
     checksumPath,
-    `${checksum}  ${basename(installerPath)}\n`,
+    `${checksum}  ${githubAssetName(basename(installerPath))}\n`,
     "utf8",
   );
   return checksumPath;
+}
+
+function writeUpdateManifest(version, installerPath, signaturePath) {
+  const tag = `v${version}`;
+  const installerName = githubAssetName(basename(installerPath));
+  const manifestPath = join(dirname(installerPath), "latest.json");
+  const manifest = {
+    version,
+    notes: `AniWorld Desktop ${tag}`,
+    pub_date: new Date().toISOString(),
+    platforms: {
+      "windows-x86_64": {
+        signature: readFileSync(signaturePath, "utf8").trim(),
+        url: `https://github.com/${githubRepository}/releases/download/${tag}/${installerName}`,
+      },
+    },
+  };
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+  return manifestPath;
 }
 
 function normalizedRepository(remoteUrl) {
@@ -424,7 +447,7 @@ if (dryRun) {
       `Version: ${currentVersion} -> ${targetVersion}`,
       `Branch: ${branch}`,
       `Repository: ${githubRepository}${repoExists ? "" : " (wird erstellt)"}`,
-      "Artefakte: NSIS-Setup + SHA-256",
+      "Artefakte: NSIS-Setup + Signatur + SHA-256 + latest.json",
     ].join("\n"),
     "Dry Run",
   );
@@ -483,7 +506,17 @@ if (!installerPath) {
   restoreFiles(snapshots);
   fail(`Setup fuer Version ${targetVersion} wurde nicht gefunden.`);
 }
+const signaturePath = `${installerPath}.sig`;
+if (!existsSync(signaturePath)) {
+  restoreFiles(snapshots);
+  fail(`Updater-Signatur fuer Version ${targetVersion} wurde nicht gefunden.`);
+}
 const checksumPath = writeChecksum(installerPath);
+const updateManifestPath = writeUpdateManifest(
+  targetVersion,
+  installerPath,
+  signaturePath,
+);
 
 const builtVersions = currentVersions();
 if (Object.values(builtVersions).some((version) => version !== targetVersion)) {
@@ -533,7 +566,9 @@ ensureSuccess(
       "create",
       tag,
       installerPath,
+      signaturePath,
       checksumPath,
+      updateManifestPath,
       "--repo",
       githubRepository,
       "--verify-tag",
