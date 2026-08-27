@@ -70,7 +70,27 @@ Testen. `npm run dev` startet dagegen nur das lokale Vite-Frontend.
 und anschließend das fertige deutsche NSIS-Setup. Die Ausgabedatei liegt unter:
 
 ```text
-src-tauri\target\release\bundle\nsis\AniWorld Desktop_0.1.0_x64-setup.exe
+src-tauri\target\release\bundle\nsis\AniWorld Desktop_<VERSION>_x64-setup.exe
+```
+
+## GitHub-Release
+
+Der interaktive Release-Ablauf wird so gestartet:
+
+```powershell
+npm run release
+```
+
+Das Menü bietet Patch, Minor und Major an. Der Ablauf hält die Versionen in
+`package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock` und
+`tauri.conf.json` synchron, baut einmalig das NSIS-Setup, erstellt Release-Commit
+und Git-Tag, pusht beides und lädt Setup sowie SHA-256-Prüfsumme in ein neues
+GitHub-Release hoch. Der Git-Arbeitsbaum muss vorher sauber sein.
+
+Eine sichere Vorschau ohne Änderungen, Build oder Upload ist ebenfalls möglich:
+
+```powershell
+npm run release -- patch --dry-run
 ```
 
 Die Anmeldung wird im anwendungseigenen WebView-Profil gespeichert. Die externe
