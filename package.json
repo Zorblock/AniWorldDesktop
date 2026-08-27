@@ -1,0 +1,21 @@
+{
+  "name": "aniworld-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "author": "Zorblock",
+  "type": "module",
+  "scripts": {
+    "start": "tauri dev",
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "installer": "tauri build --bundles nsis",
+    "preview": "vite preview",
+    "tauri": "tauri"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "vite": "^6.0.3",
+    "typescript": "~5.6.2"
+  }
+}

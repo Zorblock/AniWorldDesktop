@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AniWorld Desktop",
+  "version": "0.1.0",
+  "identifier": "de.zorblock.aniworld-desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "capabilities": []
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "nsis",
+    "publisher": "Zorblock",
+    "copyright": "Copyright (c) 2026 Zorblock",
+    "category": "Entertainment",
+    "shortDescription": "AniWorld als Desktop-App mit Discord Rich Presence",
+    "longDescription": "Ein schlanker Desktop-Wrapper für AniWorld mit persistenter Anmeldung und Discord Rich Presence.",
+    "windows": {
+      "nsis": {
+        "template": "./windows/installer.nsi",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "installMode": "currentUser",
+        "languages": ["German"]
+      }
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

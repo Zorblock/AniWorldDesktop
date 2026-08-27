@@ -1,0 +1,187 @@
+mod adblock;
+mod anime_api;
+mod presence;
+
+use adblock::{AdBlocker, CoverHandler, PageContext, PlaybackHandler};
+use presence::{Activity, DiscordPresence};
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, RwLock},
+    thread,
+};
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+
+const ANIWORLD_URL: &str = "https://aniworld.to";
+const DISCORD_CLIENT_ID: &str = "1542562842379554826";
+
+fn user_data_directory(fallback: &Path) -> PathBuf {
+    std::env::var_os("APPDATA")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| fallback.to_owned())
+        .join("zorblock")
+        .join("userData")
+        .join("AniWorldDesktop")
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .setup(move |app| {
+            let url = ANIWORLD_URL.parse()?;
+            let data_directory = user_data_directory(app.path().app_data_dir()?.as_path());
+            std::fs::create_dir_all(&data_directory)?;
+            let blocker = AdBlocker::load(&data_directory);
+            let page_context = PageContext::new(ANIWORLD_URL);
+            let presence = Arc::new(DiscordPresence::start(DISCORD_CLIENT_ID));
+            let presence_on_title = Arc::clone(&presence);
+            let presence_on_cover = Arc::clone(&presence);
+            let presence_on_playback = Arc::clone(&presence);
+            let cover_cache = Arc::new(RwLock::new(HashMap::<String, String>::new()));
+            let cover_cache_on_title = Arc::clone(&cover_cache);
+            let cover_cache_on_request = Arc::clone(&cover_cache);
+            let cover_lookups = Arc::new(Mutex::new(HashSet::<String>::new()));
+            let cover_lookups_on_title = Arc::clone(&cover_lookups);
+            let current_activity = Arc::new(Mutex::new(Activity::idle()));
+            let activity_on_title = Arc::clone(&current_activity);
+            let activity_on_cover = Arc::clone(&current_activity);
+            let activity_on_playback = Arc::clone(&current_activity);
+            let activity_on_lookup = Arc::clone(&current_activity);
+            let cover_cache_on_lookup = Arc::clone(&cover_cache);
+            let presence_on_lookup = Arc::clone(&presence);
+            let navigation_context = page_context.clone();
+            let initialization_script = blocker.initialization_script();
+            let cover_handler: CoverHandler = Arc::new(move |page_url, cover_url| {
+                let Ok(page_url) = tauri::Url::parse(&page_url) else {
+                    return;
+                };
+                let Some(anime_slug) = Activity::anime_slug_from_url(&page_url) else {
+                    return;
+                };
+
+                let changed = cover_cache_on_request.write().ok().is_some_and(|mut cache| {
+                    if cache
+                        .get(&anime_slug)
+                        .is_some_and(|cached| anime_api::is_anilist_cover_url(cached))
+                    {
+                        return false;
+                    }
+                    cache.insert(anime_slug.clone(), cover_url.clone()).as_deref()
+                        != Some(cover_url.as_str())
+                });
+                if !changed {
+                    return;
+                }
+
+                if let Ok(mut activity) = activity_on_cover.lock() {
+                    if activity.anime_slug() == Some(anime_slug.as_str()) {
+                        activity.set_cover_url(cover_url);
+                        presence_on_cover.update(activity.clone());
+                    }
+                }
+            });
+            let playback_handler: PlaybackHandler =
+                Arc::new(move |playing, position_ms, duration_ms, rate_milli| {
+                    if let Ok(mut activity) = activity_on_playback.lock() {
+                        if activity.set_playback(playing, position_ms, duration_ms, rate_milli) {
+                            presence_on_playback.update(activity.clone());
+                        }
+                    }
+                });
+
+            let window = WebviewWindowBuilder::new(
+                app,
+                "main",
+                WebviewUrl::External("about:blank".parse()?),
+            )
+            .title("AniWorld Desktop")
+            .inner_size(1280.0, 800.0)
+            .min_inner_size(900.0, 600.0)
+            .center()
+            .data_directory(data_directory)
+            .general_autofill_enabled(true)
+            .initialization_script_for_all_frames(initialization_script)
+            .on_navigation(move |url| {
+                if matches!(url.scheme(), "http" | "https") {
+                    navigation_context.update(url.as_str());
+                    true
+                } else {
+                    url.scheme() == "about"
+                }
+            })
+            .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
+            .on_document_title_changed(move |window, title| {
+                let app_title = if title.trim().is_empty() {
+                    "AniWorld Desktop".to_owned()
+                } else {
+                    format!("{title} — AniWorld Desktop")
+                };
+                let _ = window.set_title(&app_title);
+
+                if let Ok(url) = window.url() {
+                    let mut activity = Activity::from_url(&url, Some(&title));
+                    if let Some(cover_url) = activity.anime_slug().and_then(|anime_slug| {
+                        cover_cache_on_title
+                            .read()
+                            .ok()
+                            .and_then(|cache| cache.get(anime_slug).cloned())
+                    }) {
+                        activity.set_cover_url(cover_url);
+                    }
+                    if let Ok(mut current) = activity_on_title.lock() {
+                        *current = activity.clone();
+                    }
+                    presence_on_title.update(activity.clone());
+
+                    let lookup = activity
+                        .anime_slug()
+                        .zip(activity.anime_title())
+                        .map(|(slug, title)| (slug.to_owned(), title.to_owned()));
+                    if let Some((anime_slug, anime_title)) = lookup {
+                        let should_lookup = cover_lookups_on_title
+                            .lock()
+                            .is_ok_and(|mut lookups| lookups.insert(anime_slug.clone()));
+                        if should_lookup {
+                            let activity_on_lookup = Arc::clone(&activity_on_lookup);
+                            let cover_cache_on_lookup = Arc::clone(&cover_cache_on_lookup);
+                            let presence_on_lookup = Arc::clone(&presence_on_lookup);
+                            let _ = thread::Builder::new()
+                                .name("anilist-cover".to_owned())
+                                .spawn(move || match anime_api::fetch_cover_url(&anime_title) {
+                                    Ok(Some(cover_url)) => {
+                                        if let Ok(mut cache) = cover_cache_on_lookup.write() {
+                                            cache.insert(anime_slug.clone(), cover_url.clone());
+                                        }
+                                        if let Ok(mut current) = activity_on_lookup.lock() {
+                                            if current.anime_slug() == Some(anime_slug.as_str()) {
+                                                current.set_cover_url(cover_url);
+                                                presence_on_lookup.update(current.clone());
+                                            }
+                                        }
+                                    }
+                                    Ok(None) => {}
+                                    Err(error) => eprintln!(
+                                        "AniList-Cover fuer {anime_title} konnte nicht geladen werden: {error}"
+                                    ),
+                                });
+                        }
+                    }
+                }
+            })
+            .build()?;
+
+            adblock::install_network_filter(
+                &window,
+                blocker,
+                page_context,
+                cover_handler,
+                playback_handler,
+            )?;
+            window.navigate(url)?;
+
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("AniWorld Desktop konnte nicht gestartet werden");
+}

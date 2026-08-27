@@ -1,0 +1,29 @@
+[package]
+name = "aniworld-desktop"
+version = "0.1.0"
+description = "A secure AniWorld desktop wrapper with Discord Rich Presence"
+authors = ["Zorblock"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# This is a Windows desktop app, so the executable only needs the Rust library.
+# Shared/static library outputs are required by Tauri mobile targets and caused
+# an unnecessary MSVC DLL link step here.
+name = "aniworld_desktop_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+adblock = { version = "0.13.3", default-features = false, features = ["embedded-domain-resolver", "full-regex-handling"] }
+discord-rich-presence = "1.1"
+serde_json = "1"
+tauri = { version = "~2.11.5", features = [] }
+ureq = "3.4"
+
+[target.'cfg(windows)'.dependencies]
+webview2-com = "0.38"
+windows = { version = "0.61", features = ["Win32_System_Com"] }
