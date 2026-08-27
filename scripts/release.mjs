@@ -131,7 +131,7 @@ function currentVersions() {
 
 function validateVersion(version) {
   if (!/^\d+\.\d+\.\d+$/.test(version)) {
-    fail(`Ungueltige Version: ${version ?? "(fehlt)"}`);
+    fail(`Invalid version: ${version ?? "(missing)"}`);
   }
 }
 
@@ -148,7 +148,7 @@ function replaceVersion(relativePath, pattern, replacement) {
   const updated = contents.replace(pattern, replacement);
   if (updated === contents) {
     throw new Error(
-      `Version konnte in ${relativePath} nicht aktualisiert werden.`,
+      `Could not update the version in ${relativePath}.`,
     );
   }
   writeFileSync(path, updated, "utf8");
@@ -247,7 +247,7 @@ function connectOrCreateRepository(visibility) {
       normalizedRepository(origin.stdout) !== githubRepository.toLowerCase()
     ) {
       fail(
-        `origin zeigt nicht auf ${githubRepository}: ${origin.stdout.trim()}`,
+        `origin does not point to ${githubRepository}: ${origin.stdout.trim()}`,
       );
     }
     return;
@@ -261,7 +261,7 @@ function connectOrCreateRepository(visibility) {
         "origin",
         `https://github.com/${githubRepository}.git`,
       ]),
-      "GitHub-Remote konnte nicht eingetragen werden.",
+      "Could not add the GitHub remote.",
     );
     return;
   }
@@ -277,16 +277,16 @@ function connectOrCreateRepository(visibility) {
       "--remote",
       "origin",
       "--description",
-      "AniWorld Desktop mit Discord Rich Presence",
+      "AniWorld Desktop with Discord Rich Presence",
     ]),
-    "GitHub-Repository konnte nicht erstellt werden.",
+    "Could not create the GitHub repository.",
   );
 }
 
 function verifyRemoteState(branch, tag) {
   ensureSuccess(
     run("git", ["fetch", "origin", "--tags"]),
-    "git fetch ist fehlgeschlagen.",
+    "git fetch failed.",
   );
 
   const localTag = run("git", [
@@ -295,7 +295,7 @@ function verifyRemoteState(branch, tag) {
     "--quiet",
     `refs/tags/${tag}`,
   ]);
-  if (localTag.status === 0) fail(`Der Tag ${tag} existiert bereits.`);
+  if (localTag.status === 0) fail(`The tag ${tag} already exists.`);
 
   const release = run("gh", [
     "release",
@@ -305,7 +305,7 @@ function verifyRemoteState(branch, tag) {
     githubRepository,
   ]);
   if (release.status === 0)
-    fail(`Das GitHub-Release ${tag} existiert bereits.`);
+    fail(`The GitHub release ${tag} already exists.`);
 
   const remoteBranch = run("git", [
     "show-ref",
@@ -322,7 +322,7 @@ function verifyRemoteState(branch, tag) {
     ]);
     if (containsRemote.status !== 0) {
       fail(
-        `Der lokale Branch ${branch} liegt hinter origin/${branch}. Bitte zuerst pullen.`,
+        `The local branch ${branch} is behind origin/${branch}. Pull the latest changes first.`,
       );
     }
   }
@@ -335,38 +335,38 @@ for (const version of Object.values(versions)) validateVersion(version);
 const uniqueVersions = new Set(Object.values(versions));
 if (uniqueVersions.size !== 1) {
   fail(
-    `Versionsdateien sind nicht synchron:\n${JSON.stringify(versions, null, 2)}`,
+    `Version files are out of sync:\n${JSON.stringify(versions, null, 2)}`,
   );
 }
 const currentVersion = versions.npm;
 
-note(`v${currentVersion}\nMajor.Minor.Patch`, "Aktuelle Version");
+note(`v${currentVersion}\nMajor.Minor.Patch`, "Current Version");
 
 let releaseType = releaseTypeArgument;
 if (!releaseType) {
   releaseType = await select({
-    message: "Welche Version soll veroeffentlicht werden?",
+    message: "Which version should be released?",
     initialValue: "patch",
     options: [
       {
         value: "patch",
         label: `Patch  ->  v${nextVersion(currentVersion, "patch")}`,
-        hint: "Fehlerbehebungen",
+        hint: "Bug fixes",
       },
       {
         value: "minor",
         label: `Minor  ->  v${nextVersion(currentVersion, "minor")}`,
-        hint: "Neue Funktionen",
+        hint: "New features",
       },
       {
         value: "major",
         label: `Major  ->  v${nextVersion(currentVersion, "major")}`,
-        hint: "Inkompatible Aenderungen",
+        hint: "Breaking changes",
       },
     ],
   });
   if (isCancel(releaseType)) {
-    cancel("Release abgebrochen.");
+    cancel("Release cancelled.");
     process.exit(0);
   }
 }
@@ -376,55 +376,55 @@ const tag = `v${targetVersion}`;
 
 ensureSuccess(
   run("git", ["rev-parse", "--is-inside-work-tree"]),
-  "Kein Git-Repository gefunden.",
+  "No Git repository found.",
 );
 const branch = outputOf(
   ensureSuccess(
     run("git", ["branch", "--show-current"]),
-    "Git-Branch konnte nicht ermittelt werden.",
+    "Could not determine the Git branch.",
   ),
 );
-if (!branch) fail("Releases sind im detached-HEAD-Zustand nicht moeglich.");
+if (!branch) fail("Releases cannot be created from a detached HEAD.");
 
 const status = outputOf(run("git", ["status", "--porcelain"]));
 if (status && !dryRun) {
-  fail(`Der Git-Arbeitsbaum muss vor einem Release sauber sein:\n${status}`);
+  fail(`The Git working tree must be clean before a release:\n${status}`);
 }
 if (status && dryRun) {
-  log.warn("Dry Run: Der aktuelle Git-Arbeitsbaum ist noch nicht sauber.");
+  log.warn("Dry Run: The current Git working tree is not clean.");
 }
 
 ensureSuccess(
   run("gh", ["auth", "status"]),
-  "GitHub CLI ist nicht angemeldet.",
+  "GitHub CLI is not authenticated.",
 );
 const repoExists = repositoryExists();
 let visibility = "public";
 if (!repoExists) {
   if (assumeYes && !createPublic) {
     fail(
-      `${githubRepository} existiert noch nicht. Nutze interaktiv oder bestaetige die Erstellung mit --create-public.`,
+      `${githubRepository} does not exist yet. Run interactively or confirm its creation with --create-public.`,
     );
   }
   if (!assumeYes && !dryRun) {
     visibility = await select({
-      message: `${githubRepository} existiert noch nicht. Sichtbarkeit waehlen:`,
+      message: `${githubRepository} does not exist yet. Choose its visibility:`,
       initialValue: "public",
       options: [
         {
           value: "public",
           label: "Public",
-          hint: "Setup ist oeffentlich downloadbar",
+          hint: "Setup is publicly downloadable",
         },
         {
           value: "private",
           label: "Private",
-          hint: "Nur berechtigte Benutzer",
+          hint: "Authorized users only",
         },
       ],
     });
     if (isCancel(visibility)) {
-      cancel("Release abgebrochen.");
+      cancel("Release cancelled.");
       process.exit(0);
     }
   }
@@ -432,11 +432,11 @@ if (!repoExists) {
 
 if (!assumeYes && !dryRun) {
   const approved = await confirm({
-    message: `${tag} bauen, committen, taggen, pushen und auf GitHub veroeffentlichen?`,
+    message: `Build, commit, tag, push, and publish ${tag} on GitHub?`,
     initialValue: true,
   });
   if (isCancel(approved) || !approved) {
-    cancel("Release abgebrochen.");
+    cancel("Release cancelled.");
     process.exit(0);
   }
 }
@@ -446,12 +446,12 @@ if (dryRun) {
     [
       `Version: ${currentVersion} -> ${targetVersion}`,
       `Branch: ${branch}`,
-      `Repository: ${githubRepository}${repoExists ? "" : " (wird erstellt)"}`,
-      "Artefakte: NSIS-Setup + Signatur + SHA-256 + latest.json",
+      `Repository: ${githubRepository}${repoExists ? "" : " (will be created)"}`,
+      "Artifacts: NSIS setup + signature + SHA-256 + latest.json",
     ].join("\n"),
     "Dry Run",
   );
-  outro("Keine Dateien oder externen Daten wurden geaendert.");
+  outro("No files or external data were changed.");
   process.exit(0);
 }
 
@@ -465,12 +465,12 @@ const snapshots = new Map(
   ]),
 );
 const versionSpinner = spinner();
-versionSpinner.start(`Version wird auf ${targetVersion} gesetzt`);
+versionSpinner.start(`Setting version to ${targetVersion}`);
 
 try {
   ensureSuccess(
     runNpm(["version", targetVersion, "--no-git-tag-version"]),
-    "npm-Version konnte nicht aktualisiert werden.",
+    "Could not update the npm version.",
   );
   replaceVersion(
     "src-tauri/Cargo.toml",
@@ -485,18 +485,18 @@ try {
 } catch (error) {
   restoreFiles(snapshots);
   versionSpinner.error(
-    "Versionsaenderung fehlgeschlagen und wurde zurueckgesetzt.",
+    "Version update failed and was reverted.",
   );
   fail(error.message);
 }
-versionSpinner.stop(`Version auf ${targetVersion} aktualisiert`);
+versionSpinner.stop(`Version updated to ${targetVersion}`);
 
-log.step("NSIS-Setup wird gebaut...");
+log.step("Building the NSIS setup...");
 const buildResult = runNpm(["run", "installer"], { stdio: "inherit" });
 if (buildResult.error || buildResult.status !== 0) {
   restoreFiles(snapshots);
   fail(
-    "Installer-Build fehlgeschlagen. Versionsdateien wurden zurueckgesetzt.",
+    "Installer build failed. Version files were reverted.",
     buildResult,
   );
 }
@@ -504,12 +504,12 @@ if (buildResult.error || buildResult.status !== 0) {
 const installerPath = findInstaller(targetVersion);
 if (!installerPath) {
   restoreFiles(snapshots);
-  fail(`Setup fuer Version ${targetVersion} wurde nicht gefunden.`);
+  fail(`Could not find the setup for version ${targetVersion}.`);
 }
 const signaturePath = `${installerPath}.sig`;
 if (!existsSync(signaturePath)) {
   restoreFiles(snapshots);
-  fail(`Updater-Signatur fuer Version ${targetVersion} wurde nicht gefunden.`);
+  fail(`Could not find the updater signature for version ${targetVersion}.`);
 }
 const checksumPath = writeChecksum(installerPath);
 const updateManifestPath = writeUpdateManifest(
@@ -522,21 +522,21 @@ const builtVersions = currentVersions();
 if (Object.values(builtVersions).some((version) => version !== targetVersion)) {
   restoreFiles(snapshots);
   fail(
-    `Versionsdateien sind nach dem Build nicht synchron:\n${JSON.stringify(builtVersions, null, 2)}`,
+    `Version files are out of sync after the build:\n${JSON.stringify(builtVersions, null, 2)}`,
   );
 }
 
 ensureSuccess(
   run("git", ["add", "--", ...versionFiles]),
-  "Versionsdateien konnten nicht gestaged werden.",
+  "Could not stage the version files.",
 );
 ensureSuccess(
   run("git", ["commit", "-m", `release: ${tag}`], { stdio: "inherit" }),
-  "Release-Commit fehlgeschlagen.",
+  "Release commit failed.",
 );
 ensureSuccess(
   run("git", ["tag", "-a", tag, "-m", `AniWorld Desktop ${tag}`]),
-  "Git-Tag fehlgeschlagen.",
+  "Git tag failed.",
 );
 
 const upstream = run("git", [
@@ -551,11 +551,11 @@ const pushBranchArgs =
     : ["push", "--set-upstream", "origin", branch];
 ensureSuccess(
   run("git", pushBranchArgs, { stdio: "inherit" }),
-  "Branch-Push fehlgeschlagen.",
+  "Branch push failed.",
 );
 ensureSuccess(
   run("git", ["push", "origin", tag], { stdio: "inherit" }),
-  "Tag-Push fehlgeschlagen.",
+  "Tag push failed.",
 );
 
 ensureSuccess(
@@ -579,7 +579,7 @@ ensureSuccess(
     ],
     { stdio: "inherit" },
   ),
-  "GitHub-Release oder Upload fehlgeschlagen.",
+  "GitHub release or upload failed.",
 );
 
-outro(`AniWorld Desktop ${tag} wurde erfolgreich veroeffentlicht.`);
+outro(`AniWorld Desktop ${tag} was published successfully.`);

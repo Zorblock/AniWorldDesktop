@@ -12,7 +12,7 @@ pub fn check_on_start(app: AppHandle) {
 
     tauri::async_runtime::spawn(async move {
         if let Err(error) = check_for_update(app).await {
-            eprintln!("Update-Pruefung fehlgeschlagen: {error}");
+            eprintln!("Update check failed: {error}");
         }
     });
 }
@@ -27,7 +27,7 @@ async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
     let accepted = app
         .dialog()
         .message(format!(
-            "AniWorld Desktop {version} ist verfügbar.\n\nJetzt herunterladen und installieren?"
+            "AniWorld Desktop {version} is available.\n\nDownload and install it now?"
         ))
         .title(format!("New Version {version}"))
         .kind(MessageDialogKind::Info)
@@ -40,10 +40,8 @@ async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
 
     if let Err(error) = update.download_and_install(|_, _| {}, || {}).await {
         app.dialog()
-            .message(format!(
-                "Das Update konnte nicht installiert werden:\n\n{error}"
-            ))
-            .title("Update fehlgeschlagen")
+            .message(format!("The update could not be installed:\n\n{error}"))
+            .title("Update Failed")
             .kind(MessageDialogKind::Error)
             .show(|_| {});
         return Err(error);

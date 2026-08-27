@@ -360,7 +360,7 @@ fn download_filter_list() -> Result<String, Box<dyn std::error::Error>> {
     if looks_like_filter_list(&contents) {
         Ok(contents)
     } else {
-        Err("EasyList-Antwort ist keine gueltige Filterliste".into())
+        Err("The EasyList response is not a valid filter list".into())
     }
 }
 
@@ -380,12 +380,12 @@ fn load_filter_list(user_data_directory: &Path) -> String {
                 let _ = fs::create_dir_all(parent);
             }
             if let Err(error) = fs::write(&path, &contents) {
-                eprintln!("EasyList-Cache konnte nicht gespeichert werden: {error}");
+                eprintln!("Could not save the EasyList cache: {error}");
             }
             contents
         }
         Err(error) => {
-            eprintln!("EasyList konnte nicht aktualisiert werden: {error}");
+            eprintln!("Could not update EasyList: {error}");
             cached.unwrap_or_default()
         }
     }
@@ -409,7 +409,7 @@ pub fn install_network_filter(
                 playback_handler,
             )
         } {
-            eprintln!("WebView2-Adblocker konnte nicht aktiviert werden: {error}");
+            eprintln!("Could not enable the WebView2 ad blocker: {error}");
         }
     })
 }

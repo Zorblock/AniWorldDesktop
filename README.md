@@ -1,139 +1,45 @@
 # AniWorld Desktop
 
-Schlanker Tauri-2-Desktop-Wrapper für `https://aniworld.to` mit persistenter
-WebView-Anmeldung und Discord Rich Presence.
+A lightweight Windows desktop app for AniWorld, built with Rust and Tauri.
 
-Autor und Herausgeber: **Zorblock**
+## Features
 
-## Einrichtung
+- Persistent AniWorld login in a dedicated app profile
+- Built-in ad and popup blocking
+- Discord Rich Presence with anime title, season, episode, cover, and playback progress
+- Rich Presence automatically hides while playback is paused
+- Signed automatic updates through GitHub Releases
+- Per-user installation without administrator rights
 
-Voraussetzungen unter Windows:
+## Install
 
-- Rust (stable)
-- Node.js mit npm
-- Microsoft Edge WebView2 Runtime (unter aktuellem Windows normalerweise vorhanden)
-- Discord Desktop
-
-Abhängigkeiten installieren:
-
-```powershell
-npm install
-```
-
-## Discord Rich Presence
-
-Die Discord Application ID ist bereits fest eingebaut. Es ist keine zusätzliche
-Konfiguration nötig. Läuft Discord beim App-Start noch nicht, versucht sich die
-App automatisch alle 15 Sekunden erneut zu verbinden.
-
-Discord zeigt ausschließlich eine tatsächlich geöffnete Episodenseite an. Als
-Details erscheint der echte Anime-Titel der AniWorld-Seite, darunter zum Beispiel
-`Season 2 • Episode 1`. Beim Stöbern, auf Staffelübersichten oder außerhalb von
-AniWorld wird die Aktivität gelöscht, statt erfundene Statustexte anzuzeigen.
-Das zugehörige Anime-Cover wird bevorzugt über die AniList-API geladen und als
-großes Rich-Presence-Bild gesetzt. Falls AniList nicht erreichbar ist, bleibt das
-Cover der AniWorld-Seite als Fallback aktiv.
-Während das Video läuft, zeigt Discord außerdem einen Fortschrittsbalken aus der
-echten Wiedergabeposition und Gesamtdauer. Springen und geänderte
-Wiedergabegeschwindigkeit werden berücksichtigt. Bei Pause, Wiedergabeende oder
-vor dem ersten Start wird die Discord-Aktivität vollständig ausgeblendet.
-
-## Werbeblocker
-
-Die App blockiert Werbe- und Popup-Anfragen direkt in WebView2 mit der nativen
-Rust-Filter-Engine von Brave. EasyList wird beim ersten Start geladen und danach
-höchstens alle vier Tage aktualisiert. Ist keine Verbindung verfügbar, verwendet
-die App den letzten Cache oder eine eingebaute Grundliste. Der Cache liegt unter:
-
-```text
-%APPDATA%\zorblock\userData\AniWorldDesktop\adblock\easylist.txt
-```
-
-Zusätzlich werden neue Werbe- und Popunder-Fenster auch bei Mausklicks vollständig
-unterdrückt. Bewusst gewählte AniWorld-Hosterlinks öffnen sich stattdessen im
-vorhandenen App-Fenster. Passende AniWorld-Werbeelemente werden ausgeblendet.
-EasyList stammt von den
-[EasyList-Autoren](https://easylist.to/) und steht unter deren Lizenzbedingungen.
-
-## Starten und bauen
-
-```powershell
-npm run start
-npm run tauri dev
-npm run installer
-```
-
-`npm run start` startet die vollständige Tauri-App im Entwicklungsmodus zum
-Testen. `npm run dev` startet dagegen nur das lokale Vite-Frontend.
-
-`npm run installer` baut automatisch das Frontend, den optimierten Rust-Release
-und anschließend das fertige deutsche NSIS-Setup. Die Ausgabedatei liegt unter:
-
-```text
-src-tauri\target\release\bundle\nsis\AniWorld Desktop_<VERSION>_x64-setup.exe
-```
-
-## GitHub-Release
-
-Der interaktive Release-Ablauf wird so gestartet:
-
-```powershell
-npm run release
-```
-
-Das Menü bietet Patch, Minor und Major an. Der Ablauf hält die Versionen in
-`package.json`, `package-lock.json`, `Cargo.toml`, `Cargo.lock` und
-`tauri.conf.json` synchron, baut einmalig das NSIS-Setup, erstellt Release-Commit
-und Git-Tag, pusht beides und lädt Setup, Updater-Signatur, SHA-256-Prüfsumme
-sowie `latest.json` in ein neues GitHub-Release hoch. Der Git-Arbeitsbaum muss
-vorher sauber sein.
-
-Eine sichere Vorschau ohne Änderungen, Build oder Upload ist ebenfalls möglich:
-
-```powershell
-npm run release -- patch --dry-run
-```
-
-## Automatische Updates
-
-Ein installierter Release-Build prüft bei jedem Programmstart einmalig
-`https://github.com/Zorblock/AniWorldDesktop/releases/latest/download/latest.json`.
-Ist dort eine höhere Version eingetragen, erscheint ein natives Fenster mit dem
-Titel `New Version <VERSION>` und Ja/Nein-Schaltflächen. Nach Zustimmung lädt
-Tauri das signierte NSIS-Setup, prüft dessen Signatur und startet die passive
-Installation. Unter Windows wird AniWorld Desktop dabei automatisch beendet.
-
-Der erste updaterfähige Installer muss einmal manuell installiert werden. Danach
-werden zukünftige Releases automatisch erkannt. Im Entwicklungsmodus ist die
-Prüfung standardmäßig deaktiviert; für einen bewussten Test kann sie so aktiviert
-werden:
-
-```powershell
-$env:ANIWORLD_UPDATE_CHECK="1"
-npm run start
-```
-
-Der private Signierschlüssel liegt ausschließlich lokal unter
-`%USERPROFILE%\.tauri\AniWorldDesktop.key`. Er darf niemals in Git eingecheckt
-werden und sollte sicher gesichert werden, weil ohne ihn keine kompatiblen
-Updates mehr veröffentlicht werden können.
-
-Die Anmeldung wird im anwendungseigenen WebView-Profil gespeichert. Die externe
-Website erhält bewusst keine Tauri-Capabilities oder Rust-Kommandos. Die RPC-
-Anzeige wird nur aus der aktuellen AniWorld-URL und dem Dokumenttitel erzeugt;
-Zugangsdaten und Seiteninhalte werden nicht an das Rust-Backend übergeben.
-
-Unter Windows verwendet die App folgende festen Benutzerpfade:
+Download the latest setup from
+[GitHub Releases](https://github.com/Zorblock/AniWorldDesktop/releases/latest)
+and run it. The app checks for new versions whenever it starts.
 
 ```text
 Installation: %APPDATA%\zorblock\apps\AniWorldDesktop
-Benutzerdaten: %APPDATA%\zorblock\userData\AniWorldDesktop
+User data:    %APPDATA%\zorblock\userData\AniWorldDesktop
 ```
 
-## Einschränkung
+## Run from Source
 
-Die App zeigt in Discord die geöffnete Serie sowie Staffel/Folge. Die
-Wiedergabeerkennung setzt einen zugänglichen HTML5-Videoplayer im eingebetteten
-Hoster voraus. Für Inhalte und Verfügbarkeit der eingebundenen Website ist deren
-Betreiber verantwortlich; beachte die in deinem Land geltenden Rechte und
-Bedingungen.
+Requires Node.js, Rust, WebView2, and Discord Desktop.
+
+```powershell
+npm install
+npm run start
+```
+
+Create a signed NSIS setup with:
+
+```powershell
+npm run installer
+```
+
+## Disclaimer
+
+AniWorld Desktop is an independent desktop wrapper. Content availability and
+rights remain the responsibility of the embedded website and the user.
+
+Author and publisher: **Zorblock**

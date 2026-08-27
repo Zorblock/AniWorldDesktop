@@ -61,7 +61,7 @@ fn cover_url_from_response(response: &str) -> Result<Option<String>, String> {
     let response: serde_json::Value =
         serde_json::from_str(response).map_err(|error| error.to_string())?;
     if let Some(errors) = response.get("errors") {
-        return Err(format!("AniList meldete einen API-Fehler: {errors}"));
+        return Err(format!("AniList returned an API error: {errors}"));
     }
 
     let cover = &response["data"]["Media"]["coverImage"];

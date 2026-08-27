@@ -165,7 +165,7 @@ pub fn run() {
                                     }
                                     Ok(None) => {}
                                     Err(error) => eprintln!(
-                                        "AniList-Cover fuer {anime_title} konnte nicht geladen werden: {error}"
+                                        "Could not load the AniList cover for {anime_title}: {error}"
                                     ),
                                 });
                         }
@@ -187,5 +187,5 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("AniWorld Desktop konnte nicht gestartet werden");
+        .expect("AniWorld Desktop could not be started");
 }

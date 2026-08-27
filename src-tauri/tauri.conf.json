@@ -23,15 +23,15 @@
     "publisher": "Zorblock",
     "copyright": "Copyright (c) 2026 Zorblock",
     "category": "Entertainment",
-    "shortDescription": "AniWorld als Desktop-App mit Discord Rich Presence",
-    "longDescription": "Ein schlanker Desktop-Wrapper für AniWorld mit persistenter Anmeldung und Discord Rich Presence.",
+    "shortDescription": "AniWorld desktop app with Discord Rich Presence",
+    "longDescription": "A lightweight AniWorld desktop wrapper with persistent login and Discord Rich Presence.",
     "windows": {
       "nsis": {
         "template": "./windows/installer.nsi",
         "installerIcon": "icons/icon.ico",
         "uninstallerIcon": "icons/icon.ico",
         "installMode": "currentUser",
-        "languages": ["German"]
+        "languages": ["English"]
       }
     },
     "icon": [

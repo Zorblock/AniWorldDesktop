@@ -1,3 +1,3 @@
-// Dieses lokale Fallback-Dokument wird nur für das Tauri-Bundle gebaut.
-// Das eigentliche Hauptfenster wird in Rust mit der externen AniWorld-URL erzeugt.
+// This local fallback document is only built for the Tauri bundle.
+// Rust creates the main window with the external AniWorld URL.
 export {};

@@ -13,7 +13,7 @@ if (
   !environment.TAURI_SIGNING_PRIVATE_KEY_PATH
 ) {
   if (!existsSync(defaultKeyPath)) {
-    console.error(`Updater-Signierschluessel fehlt: ${defaultKeyPath}`);
+    console.error(`Updater signing key is missing: ${defaultKeyPath}`);
     process.exit(1);
   }
   // Passing the key contents also works across Tauri CLI versions where the

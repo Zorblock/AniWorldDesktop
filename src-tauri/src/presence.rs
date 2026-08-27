@@ -212,7 +212,7 @@ impl DiscordPresence {
         thread::Builder::new()
             .name("discord-rpc".to_owned())
             .spawn(move || rpc_worker(&client_id, receiver))
-            .expect("Discord-RPC-Thread konnte nicht gestartet werden");
+            .expect("Discord RPC thread could not be started");
 
         Self { sender }
     }
