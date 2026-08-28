@@ -34,7 +34,7 @@ struct PresenceSnapshot {
     details: String,
     state: String,
     cover_url: Option<String>,
-    timestamps: (i64, i64),
+    timestamps: Option<(i64, i64)>,
 }
 
 impl PresenceSnapshot {
@@ -42,8 +42,18 @@ impl PresenceSnapshot {
         self.details != other.details
             || self.state != other.state
             || self.cover_url != other.cover_url
-            || self.timestamps.0.abs_diff(other.timestamps.0) > TIMESTAMP_DRIFT_TOLERANCE_MS
-            || self.timestamps.1.abs_diff(other.timestamps.1) > TIMESTAMP_DRIFT_TOLERANCE_MS
+            || timestamps_materially_differ(self.timestamps, other.timestamps)
+    }
+}
+
+fn timestamps_materially_differ(current: Option<(i64, i64)>, previous: Option<(i64, i64)>) -> bool {
+    match (current, previous) {
+        (Some(current), Some(previous)) => {
+            current.0.abs_diff(previous.0) > TIMESTAMP_DRIFT_TOLERANCE_MS
+                || current.1.abs_diff(previous.1) > TIMESTAMP_DRIFT_TOLERANCE_MS
+        }
+        (None, None) => false,
+        _ => true,
     }
 }
 
@@ -185,14 +195,24 @@ impl Activity {
         self.episode_fields()
     }
 
-    fn presence_snapshot(&self) -> Option<PresenceSnapshot> {
-        let (details, state) = self.discord_fields()?;
-        Some(PresenceSnapshot {
-            details,
-            state,
-            cover_url: self.cover_url.clone(),
-            timestamps: self.playback_timestamps()?,
-        })
+    fn presence_snapshot(&self) -> PresenceSnapshot {
+        if let (Some((details, state)), Some(timestamps)) =
+            (self.discord_fields(), self.playback_timestamps())
+        {
+            return PresenceSnapshot {
+                details,
+                state,
+                cover_url: self.cover_url.clone(),
+                timestamps: Some(timestamps),
+            };
+        }
+
+        PresenceSnapshot {
+            details: "Browsing AniWorld".to_owned(),
+            state: "Looking for something to watch".to_owned(),
+            cover_url: None,
+            timestamps: None,
+        }
     }
 
     fn episode_fields(&self) -> Option<(String, String)> {
@@ -243,6 +263,7 @@ impl DiscordPresence {
             .name("discord-rpc".to_owned())
             .spawn(move || rpc_worker(&client_id, receiver))
             .expect("Discord RPC thread could not be started");
+        let _ = sender.send(Activity::idle());
 
         Self { sender }
     }
@@ -257,15 +278,13 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
     let mut connected = false;
     let mut current = Activity::idle();
     let mut published: Option<PresenceSnapshot> = None;
-    let mut activity_visible = false;
     let mut last_write: Option<Instant> = None;
 
     loop {
-        let pending_update = current.presence_snapshot().is_some_and(|desired| {
-            published
-                .as_ref()
-                .is_none_or(|previous| desired.materially_differs(previous))
-        });
+        let desired = current.presence_snapshot();
+        let pending_update = published
+            .as_ref()
+            .is_none_or(|previous| desired.materially_differs(previous));
         let wait_time = if connected && pending_update {
             last_write
                 .map(|last| PRESENCE_UPDATE_INTERVAL.saturating_sub(last.elapsed()))
@@ -291,19 +310,7 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
             Err(RecvTimeoutError::Timeout) => {}
         }
 
-        let Some(desired) = current.presence_snapshot() else {
-            if connected && activity_visible {
-                if client.clear_activity().is_err() {
-                    connected = false;
-                    let _ = client.close();
-                } else {
-                    activity_visible = false;
-                    published = None;
-                    last_write = Some(Instant::now());
-                }
-            }
-            continue;
-        };
+        let desired = current.presence_snapshot();
 
         if !connected {
             connected = client.connect().is_ok();
@@ -311,7 +318,6 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
                 continue;
             }
             published = None;
-            activity_visible = false;
             last_write = None;
         }
 
@@ -330,11 +336,9 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
             .details(&desired.details)
             .state(&desired.state)
             .activity_type(activity::ActivityType::Watching);
-        payload = payload.timestamps(
-            activity::Timestamps::new()
-                .start(desired.timestamps.0)
-                .end(desired.timestamps.1),
-        );
+        if let Some((start, end)) = desired.timestamps {
+            payload = payload.timestamps(activity::Timestamps::new().start(start).end(end));
+        }
         if let Some(cover_url) = desired.cover_url.as_deref() {
             let assets = activity::Assets::new()
                 .large_image(cover_url)
@@ -345,11 +349,9 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
         if client.set_activity(payload).is_err() {
             connected = false;
             published = None;
-            activity_visible = false;
             let _ = client.close();
         } else {
             published = Some(desired);
-            activity_visible = true;
             last_write = Some(Instant::now());
         }
     }
@@ -471,8 +473,8 @@ mod tests {
         assert!(first.set_playback_at(true, 30_000, 120_000, 1_000, 1_000_000));
         assert!(later.set_playback_at(true, 40_000, 120_000, 1_000, 1_010_000));
 
-        let first = first.presence_snapshot().unwrap();
-        let later = later.presence_snapshot().unwrap();
+        let first = first.presence_snapshot();
+        let later = later.presence_snapshot();
         assert!(!later.materially_differs(&first));
     }
 
@@ -489,8 +491,25 @@ mod tests {
         assert!(first.set_playback_at(true, 30_000, 120_000, 1_000, 1_000_000));
         assert!(seeked.set_playback_at(true, 70_000, 120_000, 1_000, 1_010_000));
 
-        let first = first.presence_snapshot().unwrap();
-        let seeked = seeked.presence_snapshot().unwrap();
+        let first = first.presence_snapshot();
+        let seeked = seeked.presence_snapshot();
         assert!(seeked.materially_differs(&first));
+    }
+
+    #[test]
+    fn uses_browsing_presence_while_paused() {
+        let url = Url::parse("https://aniworld.to/anime/stream/demon-slayer/staffel-2/episode-7")
+            .unwrap();
+        let mut parsed = Activity::from_url(
+            &url,
+            Some("Episode 7 Staffel 2 von Demon Slayer | AniWorld.to"),
+        );
+
+        assert!(parsed.set_playback_at(false, 30_000, 120_000, 1_000, 1_000_000));
+        let presence = parsed.presence_snapshot();
+
+        assert_eq!(presence.details, "Browsing AniWorld");
+        assert_eq!(presence.state, "Looking for something to watch");
+        assert_eq!(presence.timestamps, None);
     }
 }
