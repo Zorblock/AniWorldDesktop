@@ -1,11 +1,38 @@
 use crate::process_shutdown;
 use std::time::Duration;
-use tauri::{AppHandle, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::AppHandle;
+#[cfg(target_os = "windows")]
+use tauri::Manager;
+#[cfg(not(target_os = "windows"))]
+use tauri::{WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_updater::UpdaterExt;
 
+#[cfg(target_os = "windows")]
+use std::sync::mpsc::{self, Sender};
+
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(15);
 const INSTALL_STATUS_DELAY: Duration = Duration::from_millis(600);
+
+#[cfg(target_os = "windows")]
+enum ProgressCommand {
+    Update {
+        status: String,
+        detail: String,
+        percentage: Option<u8>,
+    },
+    Close,
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone)]
+struct ProgressWindow {
+    sender: Sender<ProgressCommand>,
+}
+
+#[cfg(not(target_os = "windows"))]
+#[derive(Clone)]
+struct ProgressWindow(WebviewWindow);
 
 pub fn check_on_start(app: AppHandle) {
     if cfg!(debug_assertions) && std::env::var("ANIWORLD_UPDATE_CHECK").as_deref() != Ok("1") {
@@ -60,7 +87,8 @@ async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
         }
     };
 
-    let progress_window = create_progress_window(&app, &version)?;
+    let progress_window = create_progress_window(&app, &version)
+        .map_err(|message| tauri_plugin_updater::Error::from(std::io::Error::other(message)))?;
     let download_window = progress_window.clone();
     let verification_window = progress_window.clone();
     let mut downloaded = 0_u64;
@@ -139,7 +167,8 @@ async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
     Ok(())
 }
 
-fn create_progress_window(app: &AppHandle, version: &str) -> tauri::Result<WebviewWindow> {
+#[cfg(not(target_os = "windows"))]
+fn create_progress_window(app: &AppHandle, version: &str) -> Result<ProgressWindow, String> {
     let version = serde_json::json!(version);
     WebviewWindowBuilder::new(
         app,
@@ -170,9 +199,130 @@ fn create_progress_window(app: &AppHandle, version: &str) -> tauri::Result<Webvi
         "#
     ))
     .build()
+    .map(ProgressWindow)
+    .map_err(|error| error.to_string())
 }
 
-fn show_download_progress(window: &WebviewWindow, downloaded: u64, total: Option<u64>) {
+#[cfg(target_os = "windows")]
+fn create_progress_window(app: &AppHandle, version: &str) -> Result<ProgressWindow, String> {
+    let (sender, receiver) = mpsc::channel();
+    let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
+    let version = version.to_owned();
+    let parent_window = app
+        .get_webview_window("main")
+        .and_then(|window| window.hwnd().ok())
+        .map(|handle| handle.0 as isize);
+
+    std::thread::Builder::new()
+        .name("aniworld-native-updater".to_owned())
+        .spawn(move || native_progress_dialog(version, parent_window, receiver, ready_sender))
+        .map_err(|error| format!("Could not start the update progress dialog: {error}"))?;
+
+    ready_receiver
+        .recv_timeout(Duration::from_secs(3))
+        .map_err(|error| format!("The update progress dialog did not start: {error}"))??;
+
+    Ok(ProgressWindow { sender })
+}
+
+#[cfg(target_os = "windows")]
+fn native_progress_dialog(
+    version: String,
+    parent_window: Option<isize>,
+    receiver: mpsc::Receiver<ProgressCommand>,
+    ready_sender: mpsc::SyncSender<Result<(), String>>,
+) {
+    use windows::core::{IUnknown, HSTRING};
+    use windows::Win32::{
+        Foundation::HWND,
+        System::Com::{
+            CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
+            COINIT_APARTMENTTHREADED,
+        },
+        UI::Shell::{
+            CLSID_ProgressDialog, IProgressDialog, PROGDLG_MODAL, PROGDLG_NOCANCEL,
+            PROGDLG_NOMINIMIZE, PROGDLG_NOTIME,
+        },
+    };
+
+    let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if let Err(error) = initialized.ok() {
+        let _ = ready_sender.send(Err(format!(
+            "Could not initialize the native update dialog: {error}"
+        )));
+        return;
+    }
+
+    let dialog: IProgressDialog = match unsafe {
+        CoCreateInstance(
+            &CLSID_ProgressDialog,
+            None::<&IUnknown>,
+            CLSCTX_INPROC_SERVER,
+        )
+    } {
+        Ok(dialog) => dialog,
+        Err(error) => {
+            let _ = ready_sender.send(Err(format!(
+                "Could not create the native update dialog: {error}"
+            )));
+            unsafe { CoUninitialize() };
+            return;
+        }
+    };
+
+    let started = unsafe {
+        (|| -> windows::core::Result<()> {
+            dialog.SetTitle(&HSTRING::from("AniWorld Desktop Update"))?;
+            dialog.StartProgressDialog(
+                parent_window.map(|handle| HWND(handle as *mut _)),
+                None::<&IUnknown>,
+                PROGDLG_MODAL | PROGDLG_NOCANCEL | PROGDLG_NOMINIMIZE | PROGDLG_NOTIME,
+                None,
+            )?;
+            dialog.SetLine(1, &HSTRING::from("Preparing update…"), false, None)?;
+            dialog.SetLine(
+                2,
+                &HSTRING::from("The app will restart automatically"),
+                false,
+                None,
+            )?;
+            dialog.SetLine(3, &HSTRING::from(format!("Version {version}")), false, None)?;
+            dialog.SetProgress(0, 100)
+        })()
+    };
+
+    if let Err(error) = started {
+        let _ = ready_sender.send(Err(format!(
+            "Could not show the native update dialog: {error}"
+        )));
+        let _ = unsafe { dialog.StopProgressDialog() };
+        drop(dialog);
+        unsafe { CoUninitialize() };
+        return;
+    }
+
+    let _ = ready_sender.send(Ok(()));
+    while let Ok(command) = receiver.recv() {
+        match command {
+            ProgressCommand::Update {
+                status,
+                detail,
+                percentage,
+            } => unsafe {
+                let _ = dialog.SetLine(1, &HSTRING::from(status), false, None);
+                let _ = dialog.SetLine(2, &HSTRING::from(detail), false, None);
+                let _ = dialog.SetProgress(percentage.unwrap_or(0) as u32, 100);
+            },
+            ProgressCommand::Close => break,
+        }
+    }
+
+    let _ = unsafe { dialog.StopProgressDialog() };
+    drop(dialog);
+    unsafe { CoUninitialize() };
+}
+
+fn show_download_progress(window: &ProgressWindow, downloaded: u64, total: Option<u64>) {
     let downloaded_mb = downloaded as f64 / 1_048_576.0;
     let (detail, percentage) = match total.filter(|total| *total > 0) {
         Some(total) => {
@@ -192,21 +342,41 @@ fn show_download_progress(window: &WebviewWindow, downloaded: u64, total: Option
     set_progress_state(window, "Downloading update…", &detail, percentage);
 }
 
-fn set_progress_state(window: &WebviewWindow, status: &str, detail: &str, percentage: Option<u8>) {
+#[cfg(target_os = "windows")]
+fn set_progress_state(window: &ProgressWindow, status: &str, detail: &str, percentage: Option<u8>) {
+    let _ = window.sender.send(ProgressCommand::Update {
+        status: status.to_owned(),
+        detail: detail.to_owned(),
+        percentage,
+    });
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_progress_state(window: &ProgressWindow, status: &str, detail: &str, percentage: Option<u8>) {
     let state = serde_json::json!({
         "status": status,
         "detail": detail,
         "percentage": percentage,
     });
-    let _ = window.eval(format!("window.setUpdaterState?.({state});"));
+    let _ = window.0.eval(format!("window.setUpdaterState?.({state});"));
+}
+
+#[cfg(target_os = "windows")]
+fn close_progress_window(window: &ProgressWindow) {
+    let _ = window.sender.send(ProgressCommand::Close);
+}
+
+#[cfg(not(target_os = "windows"))]
+fn close_progress_window(window: &ProgressWindow) {
+    let _ = window.0.close();
 }
 
 fn show_update_error(
     app: &AppHandle,
-    progress_window: &WebviewWindow,
+    progress_window: &ProgressWindow,
     error: &tauri_plugin_updater::Error,
 ) {
-    let _ = progress_window.close();
+    close_progress_window(progress_window);
     app.dialog()
         .message(format!("The update could not be installed:\n\n{error}"))
         .title("Update Failed")
