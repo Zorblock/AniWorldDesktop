@@ -8,7 +8,7 @@ A lightweight Windows desktop app for AniWorld, built with Rust and Tauri.
 - Built-in ad and popup blocking
 - Discord Rich Presence with anime title, season, episode, cover, and playback progress
 - Rich Presence automatically hides while playback is paused
-- Signed automatic updates through GitHub Releases
+- Signed automatic updates with visible download and installation progress
 - Per-user installation without administrator rights
 
 ## Install

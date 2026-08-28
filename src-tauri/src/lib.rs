@@ -1,6 +1,7 @@
 mod adblock;
 mod anime_api;
 mod presence;
+mod process_shutdown;
 mod updater;
 
 use adblock::{AdBlocker, CoverHandler, PageContext, PlaybackHandler};
@@ -15,6 +16,7 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 const ANIWORLD_URL: &str = "https://aniworld.to";
 const DISCORD_CLIENT_ID: &str = "1542562842379554826";
+const APP_TITLE: &str = concat!("AniWorld Desktop v", env!("CARGO_PKG_VERSION"));
 
 fn user_data_directory(fallback: &Path) -> PathBuf {
     std::env::var_os("APPDATA")
@@ -98,7 +100,7 @@ pub fn run() {
                 "main",
                 WebviewUrl::External("about:blank".parse()?),
             )
-            .title("AniWorld Desktop")
+            .title(APP_TITLE)
             .inner_size(1280.0, 800.0)
             .min_inner_size(900.0, 600.0)
             .center()
@@ -116,9 +118,9 @@ pub fn run() {
             .on_new_window(|_url, _features| tauri::webview::NewWindowResponse::Deny)
             .on_document_title_changed(move |window, title| {
                 let app_title = if title.trim().is_empty() {
-                    "AniWorld Desktop".to_owned()
+                    APP_TITLE.to_owned()
                 } else {
-                    format!("{title} — AniWorld Desktop")
+                    format!("{APP_TITLE} — {title}")
                 };
                 let _ = window.set_title(&app_title);
 
