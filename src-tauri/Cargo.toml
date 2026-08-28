@@ -1,6 +1,6 @@
 [package]
 name = "aniworld-desktop"
-version = "1.1.1"
+version = "1.1.2"
 description = "A secure AniWorld desktop wrapper with Discord Rich Presence"
 authors = ["Zorblock"]
 edition = "2021"
