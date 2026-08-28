@@ -2,11 +2,13 @@ use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use std::{
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::Url;
 
 const RECONNECT_INTERVAL: Duration = Duration::from_secs(15);
+const PRESENCE_UPDATE_INTERVAL: Duration = Duration::from_secs(15);
+const TIMESTAMP_DRIFT_TOLERANCE_MS: u64 = 2_000;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Activity {
@@ -25,6 +27,24 @@ struct Playback {
     duration_ms: u64,
     rate_milli: u32,
     observed_at_ms: i64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PresenceSnapshot {
+    details: String,
+    state: String,
+    cover_url: Option<String>,
+    timestamps: (i64, i64),
+}
+
+impl PresenceSnapshot {
+    fn materially_differs(&self, other: &Self) -> bool {
+        self.details != other.details
+            || self.state != other.state
+            || self.cover_url != other.cover_url
+            || self.timestamps.0.abs_diff(other.timestamps.0) > TIMESTAMP_DRIFT_TOLERANCE_MS
+            || self.timestamps.1.abs_diff(other.timestamps.1) > TIMESTAMP_DRIFT_TOLERANCE_MS
+    }
 }
 
 impl Activity {
@@ -165,6 +185,16 @@ impl Activity {
         self.episode_fields()
     }
 
+    fn presence_snapshot(&self) -> Option<PresenceSnapshot> {
+        let (details, state) = self.discord_fields()?;
+        Some(PresenceSnapshot {
+            details,
+            state,
+            cover_url: self.cover_url.clone(),
+            timestamps: self.playback_timestamps()?,
+        })
+    }
+
     fn episode_fields(&self) -> Option<(String, String)> {
         let title = self.title.clone()?;
         let season = self.season.as_deref()?;
@@ -226,11 +256,29 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
     let mut client = DiscordIpcClient::new(client_id);
     let mut connected = false;
     let mut current = Activity::idle();
+    let mut published: Option<PresenceSnapshot> = None;
+    let mut activity_visible = false;
+    let mut last_write: Option<Instant> = None;
+
     loop {
-        match receiver.recv_timeout(RECONNECT_INTERVAL) {
+        let pending_update = current.presence_snapshot().is_some_and(|desired| {
+            published
+                .as_ref()
+                .is_none_or(|previous| desired.materially_differs(previous))
+        });
+        let wait_time = if connected && pending_update {
+            last_write
+                .map(|last| PRESENCE_UPDATE_INTERVAL.saturating_sub(last.elapsed()))
+                .unwrap_or(Duration::ZERO)
+        } else {
+            RECONNECT_INTERVAL
+        };
+
+        match receiver.recv_timeout(wait_time) {
             Ok(activity) => {
-                if activity != current {
-                    current = activity;
+                current = activity;
+                for queued in receiver.try_iter() {
+                    current = queued;
                 }
             }
             Err(RecvTimeoutError::Disconnected) => {
@@ -243,10 +291,16 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
             Err(RecvTimeoutError::Timeout) => {}
         }
 
-        let Some((details, state)) = current.discord_fields() else {
-            if connected && client.clear_activity().is_err() {
-                connected = false;
-                let _ = client.close();
+        let Some(desired) = current.presence_snapshot() else {
+            if connected && activity_visible {
+                if client.clear_activity().is_err() {
+                    connected = false;
+                    let _ = client.close();
+                } else {
+                    activity_visible = false;
+                    published = None;
+                    last_write = Some(Instant::now());
+                }
             }
             continue;
         };
@@ -256,25 +310,47 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
             if !connected {
                 continue;
             }
+            published = None;
+            activity_visible = false;
+            last_write = None;
+        }
+
+        if published
+            .as_ref()
+            .is_some_and(|previous| !desired.materially_differs(previous))
+        {
+            continue;
+        }
+
+        if last_write.is_some_and(|last| last.elapsed() < PRESENCE_UPDATE_INTERVAL) {
+            continue;
         }
 
         let mut payload = activity::Activity::new()
-            .details(details)
-            .state(state)
+            .details(&desired.details)
+            .state(&desired.state)
             .activity_type(activity::ActivityType::Watching);
-        if let Some((start, end)) = current.playback_timestamps() {
-            payload = payload.timestamps(activity::Timestamps::new().start(start).end(end));
-        }
-        if let Some(cover_url) = current.cover_url.as_deref() {
+        payload = payload.timestamps(
+            activity::Timestamps::new()
+                .start(desired.timestamps.0)
+                .end(desired.timestamps.1),
+        );
+        if let Some(cover_url) = desired.cover_url.as_deref() {
             let assets = activity::Assets::new()
                 .large_image(cover_url)
-                .large_text(current.title.as_deref().unwrap_or("AniWorld"));
+                .large_text(&desired.details);
             payload = payload.assets(assets);
         }
 
         if client.set_activity(payload).is_err() {
             connected = false;
+            published = None;
+            activity_visible = false;
             let _ = client.close();
+        } else {
+            published = Some(desired);
+            activity_visible = true;
+            last_write = Some(Instant::now());
         }
     }
 }
@@ -380,5 +456,41 @@ mod tests {
         assert!(parsed.set_playback_at(false, 30_000, 120_000, 1_000, 1_000_000));
         assert_eq!(parsed.discord_fields(), None);
         assert_eq!(parsed.playback_timestamps(), None);
+    }
+
+    #[test]
+    fn ignores_normal_playback_timestamp_drift() {
+        let url = Url::parse("https://aniworld.to/anime/stream/demon-slayer/staffel-2/episode-7")
+            .unwrap();
+        let mut first = Activity::from_url(
+            &url,
+            Some("Episode 7 Staffel 2 von Demon Slayer | AniWorld.to"),
+        );
+        let mut later = first.clone();
+
+        assert!(first.set_playback_at(true, 30_000, 120_000, 1_000, 1_000_000));
+        assert!(later.set_playback_at(true, 40_000, 120_000, 1_000, 1_010_000));
+
+        let first = first.presence_snapshot().unwrap();
+        let later = later.presence_snapshot().unwrap();
+        assert!(!later.materially_differs(&first));
+    }
+
+    #[test]
+    fn detects_a_playback_seek() {
+        let url = Url::parse("https://aniworld.to/anime/stream/demon-slayer/staffel-2/episode-7")
+            .unwrap();
+        let mut first = Activity::from_url(
+            &url,
+            Some("Episode 7 Staffel 2 von Demon Slayer | AniWorld.to"),
+        );
+        let mut seeked = first.clone();
+
+        assert!(first.set_playback_at(true, 30_000, 120_000, 1_000, 1_000_000));
+        assert!(seeked.set_playback_at(true, 70_000, 120_000, 1_000, 1_010_000));
+
+        let first = first.presence_snapshot().unwrap();
+        let seeked = seeked.presence_snapshot().unwrap();
+        assert!(seeked.materially_differs(&first));
     }
 }
