@@ -130,10 +130,17 @@ impl Activity {
     pub(crate) fn set_playback(
         &mut self,
         playing: bool,
+        seeking: bool,
         position_ms: u64,
         duration_ms: u64,
         rate_milli: u32,
     ) -> bool {
+        let playing = playing
+            || (seeking
+                && self
+                    .playback
+                    .as_ref()
+                    .is_some_and(|playback| playback.playing));
         self.set_playback_at(
             playing,
             position_ms,
@@ -189,21 +196,16 @@ impl Activity {
     }
 
     fn discord_fields(&self) -> Option<(String, String)> {
-        if !self.playback.as_ref()?.playing {
-            return None;
-        }
         self.episode_fields()
     }
 
     fn presence_snapshot(&self) -> PresenceSnapshot {
-        if let (Some((details, state)), Some(timestamps)) =
-            (self.discord_fields(), self.playback_timestamps())
-        {
+        if let Some((details, state)) = self.discord_fields() {
             return PresenceSnapshot {
                 details,
                 state,
                 cover_url: self.cover_url.clone(),
-                timestamps: Some(timestamps),
+                timestamps: self.playback_timestamps(),
             };
         }
 
@@ -456,7 +458,7 @@ mod tests {
         assert_eq!(parsed.playback_timestamps(), Some((970_000, 1_090_000)));
 
         assert!(parsed.set_playback_at(false, 30_000, 120_000, 1_000, 1_000_000));
-        assert_eq!(parsed.discord_fields(), None);
+        assert!(parsed.discord_fields().is_some());
         assert_eq!(parsed.playback_timestamps(), None);
     }
 
@@ -497,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn uses_browsing_presence_while_paused() {
+    fn keeps_episode_presence_without_progress_while_paused() {
         let url = Url::parse("https://aniworld.to/anime/stream/demon-slayer/staffel-2/episode-7")
             .unwrap();
         let mut parsed = Activity::from_url(
@@ -508,8 +510,27 @@ mod tests {
         assert!(parsed.set_playback_at(false, 30_000, 120_000, 1_000, 1_000_000));
         let presence = parsed.presence_snapshot();
 
-        assert_eq!(presence.details, "Browsing AniWorld");
-        assert_eq!(presence.state, "Looking for something to watch");
+        assert_eq!(presence.details, "Demon Slayer");
+        assert_eq!(presence.state, "Season 2 • Episode 7");
         assert_eq!(presence.timestamps, None);
+    }
+
+    #[test]
+    fn keeps_playback_active_during_a_seek() {
+        let url = Url::parse("https://aniworld.to/anime/stream/demon-slayer/staffel-2/episode-7")
+            .unwrap();
+        let mut parsed = Activity::from_url(
+            &url,
+            Some("Episode 7 Staffel 2 von Demon Slayer | AniWorld.to"),
+        );
+
+        assert!(parsed.set_playback_at(true, 30_000, 120_000, 1_000, 1_000_000));
+        assert!(parsed.set_playback(false, true, 70_000, 120_000, 1_000));
+
+        assert!(parsed
+            .playback
+            .as_ref()
+            .is_some_and(|playback| playback.playing));
+        assert!(parsed.playback_timestamps().is_some());
     }
 }

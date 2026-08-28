@@ -87,9 +87,15 @@ pub fn run() {
                 }
             });
             let playback_handler: PlaybackHandler =
-                Arc::new(move |playing, position_ms, duration_ms, rate_milli| {
+                Arc::new(move |playing, seeking, position_ms, duration_ms, rate_milli| {
                     if let Ok(mut activity) = activity_on_playback.lock() {
-                        if activity.set_playback(playing, position_ms, duration_ms, rate_milli) {
+                        if activity.set_playback(
+                            playing,
+                            seeking,
+                            position_ms,
+                            duration_ms,
+                            rate_milli,
+                        ) {
                             presence_on_playback.update(activity.clone());
                         }
                     }

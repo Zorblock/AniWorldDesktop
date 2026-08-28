@@ -12,7 +12,7 @@ use std::{
 use tauri::WebviewWindow;
 
 pub type CoverHandler = Arc<dyn Fn(String, String) + Send + Sync + 'static>;
-pub type PlaybackHandler = Arc<dyn Fn(bool, u64, u64, u32) + Send + Sync + 'static>;
+pub type PlaybackHandler = Arc<dyn Fn(bool, bool, u64, u64, u32) + Send + Sync + 'static>;
 
 const EASYLIST_URL: &str = "https://easylist.to/easylist/easylist.txt";
 const CACHE_MAX_AGE: Duration = Duration::from_secs(4 * 24 * 60 * 60);
@@ -156,6 +156,7 @@ impl AdBlocker {
   const forwardPlayback = (playback) => {{
     const params = new URLSearchParams({{
       playing: playback.playing ? "1" : "0",
+      seeking: playback.seeking ? "1" : "0",
       position_ms: String(playback.positionMs),
       duration_ms: String(playback.durationMs),
       rate_milli: String(playback.rateMilli)
@@ -187,6 +188,7 @@ impl AdBlocker {
   let lastPlaybackState = "";
   let lastPlaybackSentAt = 0;
   let pendingPlaybackReport;
+  const pauseGraceUntil = new WeakMap();
   const reportVideo = (video, force = false) => {{
     const duration = Number(video.duration);
     const position = Number(video.currentTime);
@@ -196,14 +198,20 @@ impl AdBlocker {
       return;
     }}
 
+    const now = Date.now();
+    const playing = !video.paused && !video.ended && video.readyState >= 2;
+    if (!playing && !video.seeking && !video.ended && now < (pauseGraceUntil.get(video) || 0)) {{
+      return;
+    }}
+
     const playback = {{
-      playing: !video.paused && !video.ended && video.readyState >= 2,
+      playing,
+      seeking: video.seeking,
       positionMs: Math.round(Math.max(0, Math.min(duration, position)) * 1000),
       durationMs: Math.round(duration * 1000),
       rateMilli: Math.round(Math.max(0.25, Math.min(4, rate)) * 1000)
     }};
-    const stableState = `${{playback.playing}}|${{playback.durationMs}}|${{playback.rateMilli}}`;
-    const now = Date.now();
+    const stableState = `${{playback.playing}}|${{playback.seeking}}|${{playback.durationMs}}|${{playback.rateMilli}}`;
     if (!force && stableState === lastPlaybackState && now - lastPlaybackSentAt < 10000) {{
       return;
     }}
@@ -212,9 +220,9 @@ impl AdBlocker {
     sendPlayback(playback);
   }};
 
-  const scheduleVideoReport = (video) => {{
+  const scheduleVideoReport = (video, delay = 150) => {{
     clearTimeout(pendingPlaybackReport);
-    pendingPlaybackReport = setTimeout(() => reportVideo(video, true), 150);
+    pendingPlaybackReport = setTimeout(() => reportVideo(video, true), delay);
   }};
 
   const trackedVideos = new WeakSet();
@@ -223,8 +231,21 @@ impl AdBlocker {
       return;
     }}
     trackedVideos.add(video);
-    ["play", "pause", "ended", "seeked", "loadedmetadata", "durationchange", "ratechange"]
+    ["ended", "loadedmetadata", "durationchange", "ratechange"]
       .forEach((eventName) => video.addEventListener(eventName, () => scheduleVideoReport(video)));
+    video.addEventListener("play", () => {{
+      pauseGraceUntil.delete(video);
+      scheduleVideoReport(video);
+    }});
+    video.addEventListener("seeking", () => reportVideo(video, true));
+    video.addEventListener("seeked", () => {{
+      pauseGraceUntil.set(video, Date.now() + 700);
+      scheduleVideoReport(video, 750);
+    }});
+    video.addEventListener("pause", () => {{
+      pauseGraceUntil.set(video, Date.now() + 700);
+      scheduleVideoReport(video, 750);
+    }});
     video.addEventListener("timeupdate", () => reportVideo(video));
     reportVideo(video, true);
   }};
@@ -467,10 +488,12 @@ unsafe fn install_webview2_network_filter(
                 args.SetResponse(&response)?;
                 return Ok(());
             }
-            if let Some((playing, position_ms, duration_ms, rate_milli)) = playback_update(&url) {
+            if let Some((playing, seeking, position_ms, duration_ms, rate_milli)) =
+                playback_update(&url)
+            {
                 let source_url = page_context.current_url();
                 if is_aniworld_episode_page(&source_url) {
-                    playback_handler(playing, position_ms, duration_ms, rate_milli);
+                    playback_handler(playing, seeking, position_ms, duration_ms, rate_milli);
                 }
                 let status = HSTRING::from("No Content");
                 let headers =
@@ -522,7 +545,7 @@ fn cover_update(request_url: &str) -> Option<String> {
         .find_map(|(key, value)| (key == "url").then(|| value.into_owned()))
 }
 
-fn playback_update(request_url: &str) -> Option<(bool, u64, u64, u32)> {
+fn playback_update(request_url: &str) -> Option<(bool, bool, u64, u64, u32)> {
     let url = tauri::Url::parse(request_url).ok()?;
     if url.scheme() != "https"
         || url.host_str() != Some("aniworld-rpc.invalid")
@@ -533,6 +556,7 @@ fn playback_update(request_url: &str) -> Option<(bool, u64, u64, u32)> {
 
     let values: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
     let playing = values.get("playing")?.as_str() == "1";
+    let seeking = values.get("seeking").is_some_and(|value| value == "1");
     let position_ms = values.get("position_ms")?.parse().ok()?;
     let duration_ms = values.get("duration_ms")?.parse().ok()?;
     let rate_milli = values.get("rate_milli")?.parse().ok()?;
@@ -541,7 +565,7 @@ fn playback_update(request_url: &str) -> Option<(bool, u64, u64, u32)> {
         && position_ms <= duration_ms
         && (250..=4_000).contains(&rate_milli)
     {
-        Some((playing, position_ms, duration_ms, rate_milli))
+        Some((playing, seeking, position_ms, duration_ms, rate_milli))
     } else {
         None
     }
@@ -676,9 +700,9 @@ mod tests {
     fn parses_playback_bridge_updates() {
         assert_eq!(
             playback_update(
-                "https://aniworld-rpc.invalid/playback?playing=1&position_ms=30000&duration_ms=120000&rate_milli=1000"
+                "https://aniworld-rpc.invalid/playback?playing=1&seeking=1&position_ms=30000&duration_ms=120000&rate_milli=1000"
             ),
-            Some((true, 30_000, 120_000, 1_000))
+            Some((true, true, 30_000, 120_000, 1_000))
         );
         assert_eq!(
             playback_update(
