@@ -136,6 +136,15 @@ impl AdBlocker {
       return;
     }}
 
+    const isInlineHosterLink =
+      isTopFrame &&
+      isAniWorld &&
+      anchor.matches("a.watchEpisode") &&
+      anchor.closest(".generateInlinePlayer");
+    if (isInlineHosterLink) {{
+      return;
+    }}
+
     const isTrustedAniWorldLink =
       isTopFrame &&
       isAniWorld &&
@@ -736,6 +745,18 @@ mod tests {
         assert!(script.contains("style.height === \"250px\""));
         assert!(script.contains("style.marginBottom === \"10px\""));
         assert!(script.contains("attributeFilter: [\"scrolling\", \"style\"]"));
+    }
+
+    #[test]
+    fn initialization_script_leaves_inline_hoster_switches_to_aniworld() {
+        let blocker = AdBlocker {
+            engine: Engine::new_with_list_text(""),
+        };
+        let script = blocker.initialization_script();
+
+        assert!(script.contains("const isInlineHosterLink"));
+        assert!(script.contains("anchor.closest(\".generateInlinePlayer\")"));
+        assert!(script.contains("if (isInlineHosterLink)"));
     }
 
     #[test]
