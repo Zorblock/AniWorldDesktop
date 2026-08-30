@@ -163,7 +163,15 @@ impl AdBlocker {
 
   const host = location.hostname.toLowerCase();
   const isAniWorld = host === "aniworld.to" || host.endsWith(".aniworld.to");
+  const isFilemoon = host === "filemoon.to" || host.endsWith(".filemoon.to");
   const isTopFrame = window.top === window;
+
+  if (isFilemoon && location.pathname.startsWith("/d/")) {{
+    const embedUrl = new URL(location.href);
+    embedUrl.pathname = location.pathname.replace(/^\/d\//, "/e/");
+    location.replace(embedUrl.href);
+    return;
+  }}
 
   const stopPopupLink = (event) => {{
     const target = event.target;
@@ -835,6 +843,10 @@ mod tests {
         let script = blocker.initialization_script();
 
         assert!(script.contains("style[data-aniworld-embed-player]"));
+        assert!(script.contains("host === \"filemoon.to\""));
+        assert!(script.contains("location.pathname.startsWith(\"/d/\")"));
+        assert!(script.contains("location.pathname.replace(/^\\/d\\//, \"/e/\")"));
+        assert!(script.contains("location.replace(embedUrl.href)"));
         assert!(script.contains("body.video-embed-mode > :not(#root)"));
         assert!(script.contains(".video-embed-page > :not(.video-page__player)"));
         assert!(script.contains(".video-page__player-frame"));
