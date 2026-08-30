@@ -56,6 +56,40 @@ iframe[src*="googlesyndication.com"] {
 }
 "#;
 
+const EMBED_PLAYER_CSS: &str = r#"
+body.video-embed-mode {
+  width: 100% !important;
+  height: 100vh !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #000 !important;
+}
+body.video-embed-mode > :not(#root),
+body.video-embed-mode #root > :not(.video-embed-page),
+body.video-embed-mode .video-embed-page > :not(.video-page__player),
+body.video-embed-mode .video-page__player > :not(.video-page__player-frame) {
+  display: none !important;
+}
+body.video-embed-mode #root,
+body.video-embed-mode .video-embed-page,
+body.video-embed-mode .video-page__player,
+body.video-embed-mode .video-page__player-frame {
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+body.video-embed-mode .video-page__player,
+body.video-embed-mode .video-page__player-frame {
+  position: fixed !important;
+  inset: 0 !important;
+}
+"#;
+
 #[derive(Clone)]
 pub struct PageContext(Arc<RwLock<String>>);
 
@@ -116,6 +150,8 @@ impl AdBlocker {
         }
 
         let css_json = serde_json::to_string(&css).unwrap_or_else(|_| "\"\"".to_owned());
+        let embed_player_css_json =
+            serde_json::to_string(EMBED_PLAYER_CSS).unwrap_or_else(|_| "\"\"".to_owned());
         format!(
             r#"
 (() => {{
@@ -344,6 +380,22 @@ impl AdBlocker {
     observeInlineIframeAds();
   }} else {{
     document.addEventListener("DOMContentLoaded", observeInlineIframeAds, {{ once: true }});
+  }}
+
+  const installEmbedPlayerFilters = () => {{
+    if (document.querySelector("style[data-aniworld-embed-player]")) {{
+      return;
+    }}
+    const style = document.createElement("style");
+    style.dataset.aniworldEmbedPlayer = "true";
+    style.textContent = {embed_player_css_json};
+    (document.head || document.documentElement).appendChild(style);
+  }};
+
+  if (document.documentElement) {{
+    installEmbedPlayerFilters();
+  }} else {{
+    document.addEventListener("DOMContentLoaded", installEmbedPlayerFilters, {{ once: true }});
   }}
 
   if (!isAniWorld || !isTopFrame) {{
@@ -773,6 +825,19 @@ mod tests {
         assert!(script.contains("document.querySelector(\".inSiteWebStream\")"));
         assert!(script.contains("player.src = linkTarget"));
         assert!(!script.contains("anchor.closest(\".generateInlinePlayer\")"));
+    }
+
+    #[test]
+    fn initialization_script_isolates_the_filemoon_embed_player() {
+        let blocker = AdBlocker {
+            engine: Engine::new_with_list_text(""),
+        };
+        let script = blocker.initialization_script();
+
+        assert!(script.contains("style[data-aniworld-embed-player]"));
+        assert!(script.contains("body.video-embed-mode > :not(#root)"));
+        assert!(script.contains(".video-embed-page > :not(.video-page__player)"));
+        assert!(script.contains(".video-page__player-frame"));
     }
 
     #[test]
