@@ -270,6 +270,59 @@ impl AdBlocker {
     document.querySelectorAll("video").forEach((video) => reportVideo(video));
   }}, 5000);
 
+  const isInlineIframeAd = (element) => {{
+    if (!(element instanceof HTMLIFrameElement)) {{
+      return false;
+    }}
+
+    const style = element.style;
+    return element.getAttribute("scrolling")?.toLowerCase() === "no" &&
+      style.height === "250px" &&
+      style.width === "100%" &&
+      style.marginBottom === "10px" &&
+      style.borderRadius === "10px" &&
+      style.getPropertyPriority("display") === "important";
+  }};
+
+  const removeInlineIframeAds = (root) => {{
+    if (isInlineIframeAd(root)) {{
+      root.remove();
+      return;
+    }}
+    root.querySelectorAll?.("iframe").forEach((iframe) => {{
+      if (isInlineIframeAd(iframe)) {{
+        iframe.remove();
+      }}
+    }});
+  }};
+
+  const observeInlineIframeAds = () => {{
+    removeInlineIframeAds(document);
+    if (!document.documentElement) {{
+      return;
+    }}
+    new MutationObserver((mutations) => {{
+      mutations.forEach((mutation) => {{
+        if (mutation.type === "attributes") {{
+          removeInlineIframeAds(mutation.target);
+        }} else {{
+          mutation.addedNodes.forEach(removeInlineIframeAds);
+        }}
+      }});
+    }}).observe(document.documentElement, {{
+      attributes: true,
+      attributeFilter: ["scrolling", "style"],
+      childList: true,
+      subtree: true
+    }});
+  }};
+
+  if (document.documentElement) {{
+    observeInlineIframeAds();
+  }} else {{
+    document.addEventListener("DOMContentLoaded", observeInlineIframeAds, {{ once: true }});
+  }}
+
   if (!isAniWorld || !isTopFrame) {{
     return;
   }}
@@ -670,6 +723,19 @@ mod tests {
             "document",
             "GET"
         ));
+    }
+
+    #[test]
+    fn initialization_script_removes_the_inline_iframe_ad() {
+        let blocker = AdBlocker {
+            engine: Engine::new_with_list_text(""),
+        };
+        let script = blocker.initialization_script();
+
+        assert!(script.contains("const isInlineIframeAd"));
+        assert!(script.contains("style.height === \"250px\""));
+        assert!(script.contains("style.marginBottom === \"10px\""));
+        assert!(script.contains("attributeFilter: [\"scrolling\", \"style\"]"));
     }
 
     #[test]
