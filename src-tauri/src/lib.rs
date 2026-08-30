@@ -4,7 +4,7 @@ mod presence;
 mod process_shutdown;
 mod updater;
 
-use adblock::{AdBlocker, CoverHandler, PageContext, PlaybackHandler};
+use adblock::{AdBlocker, CoverHandler, PageContext, PlaybackHandler, SettingsHandler};
 use presence::{Activity, DiscordPresence};
 use std::{
     collections::{HashMap, HashSet},
@@ -17,6 +17,26 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 const ANIWORLD_URL: &str = "https://aniworld.to";
 const DISCORD_CLIENT_ID: &str = "1542562842379554826";
 const APP_TITLE: &str = concat!("AniWorld Desktop v", env!("CARGO_PKG_VERSION"));
+
+fn open_settings_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("settings") {
+        window.unminimize()?;
+        window.show()?;
+        window.set_focus()?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+        .title("Settings")
+        .inner_size(520.0, 420.0)
+        .min_inner_size(420.0, 320.0)
+        .resizable(true)
+        .maximizable(false)
+        .center()
+        .build()?;
+
+    Ok(())
+}
 
 fn user_data_directory(fallback: &Path) -> PathBuf {
     std::env::var_os("APPDATA")
@@ -100,6 +120,18 @@ pub fn run() {
                         }
                     }
                 });
+            let settings_app = app.handle().clone();
+            let settings_handler: SettingsHandler = Arc::new(move || {
+                let app = settings_app.clone();
+                let window_app = app.clone();
+                if let Err(error) = app.run_on_main_thread(move || {
+                    if let Err(error) = open_settings_window(&window_app) {
+                        eprintln!("Could not open the settings window: {error}");
+                    }
+                }) {
+                    eprintln!("Could not dispatch the settings window: {error}");
+                }
+            });
 
             let window = WebviewWindowBuilder::new(
                 app,
@@ -188,6 +220,7 @@ pub fn run() {
                 page_context,
                 cover_handler,
                 playback_handler,
+                settings_handler,
             )?;
             window.navigate(url)?;
             updater::check_on_start(app.handle().clone());

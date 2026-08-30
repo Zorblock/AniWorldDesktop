@@ -13,6 +13,7 @@ use tauri::WebviewWindow;
 
 pub type CoverHandler = Arc<dyn Fn(String, String) + Send + Sync + 'static>;
 pub type PlaybackHandler = Arc<dyn Fn(bool, bool, u64, u64, u32) + Send + Sync + 'static>;
+pub type SettingsHandler = Arc<dyn Fn() + Send + Sync + 'static>;
 
 const EASYLIST_URL: &str = "https://easylist.to/easylist/easylist.txt";
 const CACHE_MAX_AGE: Duration = Duration::from_secs(4 * 24 * 60 * 60);
@@ -410,6 +411,82 @@ impl AdBlocker {
     return;
   }}
 
+  const openSettings = () => {{
+    fetch("https://aniworld-rpc.invalid/settings/open", {{
+      cache: "no-store",
+      credentials: "omit",
+      mode: "no-cors"
+    }}).catch(() => {{}});
+  }};
+
+  const installSettingsButton = () => {{
+    if (document.querySelector("button[data-aniworld-settings-button]")) {{
+      return;
+    }}
+
+    const style = document.createElement("style");
+    style.dataset.aniworldSettingsButton = "true";
+    style.textContent = `
+      button[data-aniworld-settings-button] {{
+        position: fixed !important;
+        top: 12px !important;
+        left: 12px !important;
+        z-index: 2147483647 !important;
+        display: grid !important;
+        place-items: center !important;
+        width: 42px !important;
+        height: 42px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 1px solid rgba(255, 255, 255, 0.16) !important;
+        border-radius: 12px !important;
+        color: #f7f8ff !important;
+        background: rgba(15, 20, 31, 0.9) !important;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28) !important;
+        backdrop-filter: blur(14px) !important;
+        cursor: pointer !important;
+        transition: background 120ms ease, border-color 120ms ease, transform 120ms ease !important;
+      }}
+      button[data-aniworld-settings-button]:hover {{
+        border-color: rgba(113, 132, 255, 0.7) !important;
+        background: rgba(35, 43, 67, 0.96) !important;
+      }}
+      button[data-aniworld-settings-button]:active {{
+        transform: scale(0.95) !important;
+      }}
+      button[data-aniworld-settings-button]:focus-visible {{
+        outline: 2px solid #7184ff !important;
+        outline-offset: 2px !important;
+      }}
+      button[data-aniworld-settings-button] svg {{
+        width: 21px !important;
+        height: 21px !important;
+        fill: currentColor !important;
+        pointer-events: none !important;
+      }}
+    `;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.aniworldSettingsButton = "true";
+    button.title = "Settings";
+    button.setAttribute("aria-label", "Open settings");
+    button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.08-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.69-.98L14.5 2.42A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.49.49 0 0 0-.61.22l-2 3.46a.49.49 0 0 0 .12.64l2.11 1.65c-.04.32-.08.67-.08.98s.03.66.08.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.08.49 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>`;
+    button.addEventListener("click", (event) => {{
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      openSettings();
+    }});
+    (document.body || document.documentElement).appendChild(style);
+    (document.body || document.documentElement).appendChild(button);
+  }};
+
+  if (document.body) {{
+    installSettingsButton();
+  }} else {{
+    document.addEventListener("DOMContentLoaded", installSettingsButton, {{ once: true }});
+  }}
+
   let lastCoverUrl = "";
   const reportAnimeCover = () => {{
     const image = document.querySelector(".seriesCoverBox img[itemprop='image'], .seriesCoverBox img");
@@ -555,6 +632,7 @@ pub fn install_network_filter(
     page_context: PageContext,
     cover_handler: CoverHandler,
     playback_handler: PlaybackHandler,
+    settings_handler: SettingsHandler,
 ) -> tauri::Result<()> {
     window.with_webview(move |platform_webview| {
         if let Err(error) = unsafe {
@@ -564,6 +642,7 @@ pub fn install_network_filter(
                 page_context,
                 cover_handler,
                 playback_handler,
+                settings_handler,
             )
         } {
             eprintln!("Could not enable the WebView2 ad blocker: {error}");
@@ -578,6 +657,7 @@ unsafe fn install_webview2_network_filter(
     page_context: PageContext,
     cover_handler: CoverHandler,
     playback_handler: PlaybackHandler,
+    settings_handler: SettingsHandler,
 ) -> windows::core::Result<()> {
     use webview2_com::{
         take_pwstr, Microsoft::Web::WebView2::Win32::*, WebResourceRequestedEventHandler,
@@ -630,6 +710,19 @@ unsafe fn install_webview2_network_filter(
                 let source_url = page_context.current_url();
                 if is_aniworld_episode_page(&source_url) {
                     playback_handler(playing, seeking, position_ms, duration_ms, rate_milli);
+                }
+                let status = HSTRING::from("No Content");
+                let headers =
+                    HSTRING::from("Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n");
+                let response =
+                    environment.CreateWebResourceResponse(None, 204, &status, &headers)?;
+                args.SetResponse(&response)?;
+                return Ok(());
+            }
+            if settings_open_request(&url) {
+                let source_url = page_context.current_url();
+                if is_aniworld_page(&source_url) {
+                    settings_handler();
                 }
                 let status = HSTRING::from("No Content");
                 let headers =
@@ -707,11 +800,26 @@ fn playback_update(request_url: &str) -> Option<(bool, bool, u64, u64, u32)> {
     }
 }
 
+fn settings_open_request(request_url: &str) -> bool {
+    tauri::Url::parse(request_url).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.host_str() == Some("aniworld-rpc.invalid")
+            && url.path() == "/settings/open"
+    })
+}
+
+fn is_aniworld_page(page_url: &str) -> bool {
+    tauri::Url::parse(page_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .is_some_and(|host| host == "aniworld.to" || host.ends_with(".aniworld.to"))
+}
+
 fn is_aniworld_episode_page(page_url: &str) -> bool {
     let Ok(url) = tauri::Url::parse(page_url) else {
         return false;
     };
-    url.host_str() == Some("aniworld.to")
+    is_aniworld_page(page_url)
         && url.path_segments().is_some_and(|segments| {
             let segments: Vec<_> = segments.collect();
             segments
@@ -778,6 +886,7 @@ pub fn install_network_filter(
     _page_context: PageContext,
     _cover_handler: CoverHandler,
     _playback_handler: PlaybackHandler,
+    _settings_handler: SettingsHandler,
 ) -> tauri::Result<()> {
     Ok(())
 }
@@ -890,6 +999,29 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn recognizes_only_the_internal_settings_bridge() {
+        assert!(settings_open_request(
+            "https://aniworld-rpc.invalid/settings/open"
+        ));
+        assert!(!settings_open_request(
+            "https://aniworld-rpc.invalid/settings/close"
+        ));
+        assert!(!settings_open_request("https://example.com/settings/open"));
+    }
+
+    #[test]
+    fn initialization_script_installs_the_settings_button() {
+        let blocker = AdBlocker {
+            engine: Engine::new_with_list_text(""),
+        };
+        let script = blocker.initialization_script();
+
+        assert!(script.contains("button[data-aniworld-settings-button]"));
+        assert!(script.contains("aria-label\", \"Open settings"));
+        assert!(script.contains("https://aniworld-rpc.invalid/settings/open"));
     }
 
     #[test]
