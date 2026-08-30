@@ -136,12 +136,26 @@ impl AdBlocker {
       return;
     }}
 
+    const hosterItem = anchor.matches("a.watchEpisode")
+      ? anchor.closest("li[data-link-target]")
+      : null;
     const isInlineHosterLink =
       isTopFrame &&
       isAniWorld &&
-      anchor.matches("a.watchEpisode") &&
-      anchor.closest(".generateInlinePlayer");
+      hosterItem?.dataset.externalEmbed === "false";
     if (isInlineHosterLink) {{
+      event.preventDefault();
+      const playerContainer = document.querySelector(".inSiteWebStream");
+      const player = playerContainer?.querySelector("iframe");
+      const linkTarget = hosterItem.dataset.linkTarget;
+      if (player && linkTarget) {{
+        playerContainer.style.display = "inline-block";
+        player.style.display = "inline-block";
+        document.querySelectorAll(".fakePlayer").forEach((element) => {{
+          element.style.display = "none";
+        }});
+        player.src = linkTarget;
+      }}
       return;
     }}
 
@@ -748,15 +762,17 @@ mod tests {
     }
 
     #[test]
-    fn initialization_script_leaves_inline_hoster_switches_to_aniworld() {
+    fn initialization_script_embeds_all_supported_hoster_switches() {
         let blocker = AdBlocker {
             engine: Engine::new_with_list_text(""),
         };
         let script = blocker.initialization_script();
 
         assert!(script.contains("const isInlineHosterLink"));
-        assert!(script.contains("anchor.closest(\".generateInlinePlayer\")"));
-        assert!(script.contains("if (isInlineHosterLink)"));
+        assert!(script.contains("hosterItem?.dataset.externalEmbed === \"false\""));
+        assert!(script.contains("document.querySelector(\".inSiteWebStream\")"));
+        assert!(script.contains("player.src = linkTarget"));
+        assert!(!script.contains("anchor.closest(\".generateInlinePlayer\")"));
     }
 
     #[test]
