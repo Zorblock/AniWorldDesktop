@@ -4,7 +4,10 @@ mod presence;
 mod process_shutdown;
 mod updater;
 
-use adblock::{AdBlocker, CoverHandler, PageContext, PlaybackHandler, SettingsHandler};
+use adblock::{
+    AdBlocker, CoverHandler, PageContext, PlaybackHandler, SettingsHandler, WindowAction,
+    WindowHandler,
+};
 use presence::{Activity, DiscordPresence};
 use std::{
     collections::{HashMap, HashSet},
@@ -132,6 +135,38 @@ pub fn run() {
                     eprintln!("Could not dispatch the settings window: {error}");
                 }
             });
+            let window_app = app.handle().clone();
+            let window_handler: WindowHandler = Arc::new(move |action| {
+                let app = window_app.clone();
+                let action_app = app.clone();
+                if let Err(error) = app.run_on_main_thread(move || {
+                    if action == WindowAction::Close {
+                        action_app.exit(0);
+                        return;
+                    }
+
+                    let Some(window) = action_app.get_webview_window("main") else {
+                        return;
+                    };
+                    let result = match action {
+                        WindowAction::Close => Ok(()),
+                        WindowAction::Drag => window.start_dragging(),
+                        WindowAction::Minimize => window.minimize(),
+                        WindowAction::ToggleMaximize => window.is_maximized().and_then(|maximized| {
+                            if maximized {
+                                window.unmaximize()
+                            } else {
+                                window.maximize()
+                            }
+                        }),
+                    };
+                    if let Err(error) = result {
+                        eprintln!("Could not execute the window action: {error}");
+                    }
+                }) {
+                    eprintln!("Could not dispatch the window action: {error}");
+                }
+            });
 
             let window = WebviewWindowBuilder::new(
                 app,
@@ -141,6 +176,8 @@ pub fn run() {
             .title(APP_TITLE)
             .inner_size(1280.0, 800.0)
             .min_inner_size(900.0, 600.0)
+            .decorations(false)
+            .shadow(true)
             .center()
             .data_directory(data_directory)
             .general_autofill_enabled(true)
@@ -221,6 +258,7 @@ pub fn run() {
                 cover_handler,
                 playback_handler,
                 settings_handler,
+                window_handler,
             )?;
             window.navigate(url)?;
             updater::check_on_start(app.handle().clone());

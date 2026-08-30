@@ -14,6 +14,15 @@ use tauri::WebviewWindow;
 pub type CoverHandler = Arc<dyn Fn(String, String) + Send + Sync + 'static>;
 pub type PlaybackHandler = Arc<dyn Fn(bool, bool, u64, u64, u32) + Send + Sync + 'static>;
 pub type SettingsHandler = Arc<dyn Fn() + Send + Sync + 'static>;
+pub type WindowHandler = Arc<dyn Fn(WindowAction) + Send + Sync + 'static>;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WindowAction {
+    Close,
+    Drag,
+    Minimize,
+    ToggleMaximize,
+}
 
 const EASYLIST_URL: &str = "https://easylist.to/easylist/easylist.txt";
 const CACHE_MAX_AGE: Duration = Duration::from_secs(4 * 24 * 60 * 60);
@@ -419,72 +428,231 @@ impl AdBlocker {
     }}).catch(() => {{}});
   }};
 
-  const installSettingsButton = () => {{
-    if (document.querySelector("button[data-aniworld-settings-button]")) {{
+  const sendWindowAction = (action) => {{
+    const params = new URLSearchParams({{ action }});
+    fetch(`https://aniworld-rpc.invalid/window?${{params}}`, {{
+      cache: "no-store",
+      credentials: "omit",
+      mode: "no-cors"
+    }}).catch(() => {{}});
+  }};
+
+  const installTitlebar = () => {{
+    if (document.querySelector("[data-aniworld-titlebar]")) {{
       return;
     }}
 
     const style = document.createElement("style");
-    style.dataset.aniworldSettingsButton = "true";
+    style.dataset.aniworldTitlebar = "true";
     style.textContent = `
-      button[data-aniworld-settings-button] {{
+      html.aniworld-desktop-framed {{
+        height: 100% !important;
+        overflow: hidden !important;
+      }}
+      html.aniworld-desktop-framed > body {{
+        width: 100% !important;
+        height: calc(100vh - 46px) !important;
+        min-height: 0 !important;
+        margin: 46px 0 0 !important;
+        overflow: auto !important;
+      }}
+      [data-aniworld-titlebar] {{
         position: fixed !important;
-        top: 12px !important;
-        left: 12px !important;
+        inset: 0 0 auto 0 !important;
         z-index: 2147483647 !important;
-        display: grid !important;
-        place-items: center !important;
-        width: 42px !important;
-        height: 42px !important;
+        display: flex !important;
+        align-items: stretch !important;
+        width: 100% !important;
+        height: 46px !important;
         margin: 0 !important;
         padding: 0 !important;
-        border: 1px solid rgba(255, 255, 255, 0.16) !important;
-        border-radius: 12px !important;
+        border: 0 !important;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+        border-radius: 0 !important;
         color: #f7f8ff !important;
-        background: rgba(15, 20, 31, 0.9) !important;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28) !important;
-        backdrop-filter: blur(14px) !important;
-        cursor: pointer !important;
-        transition: background 120ms ease, border-color 120ms ease, transform 120ms ease !important;
+        background: #101622 !important;
+        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22) !important;
+        font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif !important;
+        user-select: none !important;
       }}
-      button[data-aniworld-settings-button]:hover {{
-        border-color: rgba(113, 132, 255, 0.7) !important;
-        background: rgba(35, 43, 67, 0.96) !important;
+      [data-aniworld-titlebar-brand] {{
+        display: flex !important;
+        align-items: center !important;
+        gap: 9px !important;
+        min-width: 185px !important;
+        padding: 0 15px !important;
+        color: #f5f7ff !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        white-space: nowrap !important;
       }}
-      button[data-aniworld-settings-button]:active {{
-        transform: scale(0.95) !important;
+      [data-aniworld-titlebar-brand] [data-native-icon] {{
+        color: #7d8fff !important;
+        font-size: 18px !important;
       }}
-      button[data-aniworld-settings-button]:focus-visible {{
+      [data-aniworld-titlebar-navigation],
+      [data-aniworld-window-controls] {{
+        display: flex !important;
+        align-items: stretch !important;
+      }}
+      [data-aniworld-titlebar-drag] {{
+        display: flex !important;
+        flex: 1 1 auto !important;
+        align-items: center !important;
+        min-width: 36px !important;
+        padding: 0 18px !important;
+        overflow: hidden !important;
+        color: #737e92 !important;
+        font-size: 12px !important;
+        white-space: nowrap !important;
+        cursor: default !important;
+      }}
+      [data-aniworld-titlebar-page-title] {{
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+      }}
+      button[data-aniworld-titlebar-button] {{
+        display: grid !important;
+        place-items: center !important;
+        width: 44px !important;
+        height: 45px !important;
+        min-width: 44px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        outline: 0 !important;
+        color: #c5ccda !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        font: inherit !important;
+        appearance: none !important;
+        cursor: default !important;
+        transition: color 100ms ease, background 100ms ease !important;
+      }}
+      button[data-aniworld-titlebar-button]:hover {{
+        color: #ffffff !important;
+        background: rgba(255, 255, 255, 0.08) !important;
+      }}
+      button[data-aniworld-titlebar-button]:active {{
+        background: rgba(255, 255, 255, 0.13) !important;
+      }}
+      button[data-aniworld-titlebar-button]:focus-visible {{
         outline: 2px solid #7184ff !important;
-        outline-offset: 2px !important;
+        outline-offset: -3px !important;
       }}
-      button[data-aniworld-settings-button] svg {{
-        width: 21px !important;
-        height: 21px !important;
-        fill: currentColor !important;
+      button[data-aniworld-titlebar-button="settings"] {{
+        margin-left: 4px !important;
+        border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
+      }}
+      button[data-aniworld-titlebar-button="close"] {{
+        width: 48px !important;
+        min-width: 48px !important;
+      }}
+      button[data-aniworld-titlebar-button="close"]:hover {{
+        color: #ffffff !important;
+        background: #c42b1c !important;
+      }}
+      [data-native-icon] {{
+        font-family: "Segoe Fluent Icons", "Segoe MDL2 Assets" !important;
+        font-size: 15px !important;
+        font-style: normal !important;
+        font-weight: 400 !important;
+        line-height: 1 !important;
         pointer-events: none !important;
       }}
     `;
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.dataset.aniworldSettingsButton = "true";
-    button.title = "Settings";
-    button.setAttribute("aria-label", "Open settings");
-    button.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.08-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.61-.22l-2.49 1a7.3 7.3 0 0 0-1.69-.98L14.5 2.42A.49.49 0 0 0 14 2h-4a.49.49 0 0 0-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.49.49 0 0 0-.61.22l-2 3.46a.49.49 0 0 0 .12.64l2.11 1.65c-.04.32-.08.67-.08.98s.03.66.08.98l-2.11 1.65a.5.5 0 0 0-.12.64l2 3.46a.5.5 0 0 0 .61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.08.49 0 .61-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65ZM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5Z"/></svg>`;
-    button.addEventListener("click", (event) => {{
+    const nativeIcon = (glyph) => {{
+      const icon = document.createElement("span");
+      icon.dataset.nativeIcon = "true";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = glyph;
+      return icon;
+    }};
+
+    const titlebarButton = (name, label, glyph, action) => {{
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.aniworldTitlebarButton = name;
+      button.title = label;
+      button.setAttribute("aria-label", label);
+      button.appendChild(nativeIcon(glyph));
+      button.addEventListener("click", (event) => {{
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        action();
+      }});
+      return button;
+    }};
+
+    const startDragging = (event) => {{
+      if (event.button !== 0) {{
+        return;
+      }}
       event.preventDefault();
-      event.stopImmediatePropagation();
-      openSettings();
+      sendWindowAction(event.detail >= 2 ? "toggle-maximize" : "drag");
+    }};
+
+    const titlebar = document.createElement("div");
+    titlebar.dataset.aniworldTitlebar = "true";
+    titlebar.setAttribute("role", "toolbar");
+    titlebar.setAttribute("aria-label", "Application controls");
+
+    const brand = document.createElement("div");
+    brand.dataset.aniworldTitlebarBrand = "true";
+    brand.appendChild(nativeIcon("\uE768"));
+    const brandText = document.createElement("span");
+    brandText.textContent = "AniWorld Desktop";
+    brand.appendChild(brandText);
+    brand.addEventListener("mousedown", startDragging);
+
+    const navigation = document.createElement("nav");
+    navigation.dataset.aniworldTitlebarNavigation = "true";
+    navigation.setAttribute("aria-label", "Browser navigation");
+    navigation.append(
+      titlebarButton("back", "Back", "\uE72B", () => history.back()),
+      titlebarButton("forward", "Forward", "\uE72A", () => history.forward()),
+      titlebarButton("home", "Home", "\uE80F", () => location.assign("https://aniworld.to/")),
+      titlebarButton("reload", "Reload", "\uE72C", () => location.reload())
+    );
+
+    const dragRegion = document.createElement("div");
+    dragRegion.dataset.aniworldTitlebarDrag = "true";
+    const pageTitle = document.createElement("span");
+    pageTitle.dataset.aniworldTitlebarPageTitle = "true";
+    const updatePageTitle = () => {{
+      pageTitle.textContent = document.title.replace(/^AniWorld Desktop(?: v[^—]+)?\s*—\s*/, "");
+    }};
+    updatePageTitle();
+    new MutationObserver(updatePageTitle).observe(document.querySelector("title") || document.documentElement, {{
+      childList: true,
+      subtree: true
     }});
-    (document.body || document.documentElement).appendChild(style);
-    (document.body || document.documentElement).appendChild(button);
+    dragRegion.appendChild(pageTitle);
+    dragRegion.addEventListener("mousedown", startDragging);
+
+    const settingsButton = titlebarButton("settings", "Settings", "\uE713", openSettings);
+
+    const windowControls = document.createElement("div");
+    windowControls.dataset.aniworldWindowControls = "true";
+    windowControls.setAttribute("aria-label", "Window controls");
+    windowControls.append(
+      titlebarButton("minimize", "Minimize", "\uE921", () => sendWindowAction("minimize")),
+      titlebarButton("maximize", "Maximize or restore", "\uE922", () => sendWindowAction("toggle-maximize")),
+      titlebarButton("close", "Close", "\uE8BB", () => sendWindowAction("close"))
+    );
+
+    titlebar.append(brand, navigation, dragRegion, settingsButton, windowControls);
+    document.documentElement.classList.add("aniworld-desktop-framed");
+    (document.head || document.documentElement).appendChild(style);
+    document.body.prepend(titlebar);
   }};
 
   if (document.body) {{
-    installSettingsButton();
+    installTitlebar();
   }} else {{
-    document.addEventListener("DOMContentLoaded", installSettingsButton, {{ once: true }});
+    document.addEventListener("DOMContentLoaded", installTitlebar, {{ once: true }});
   }}
 
   let lastCoverUrl = "";
@@ -633,6 +801,7 @@ pub fn install_network_filter(
     cover_handler: CoverHandler,
     playback_handler: PlaybackHandler,
     settings_handler: SettingsHandler,
+    window_handler: WindowHandler,
 ) -> tauri::Result<()> {
     window.with_webview(move |platform_webview| {
         if let Err(error) = unsafe {
@@ -643,6 +812,7 @@ pub fn install_network_filter(
                 cover_handler,
                 playback_handler,
                 settings_handler,
+                window_handler,
             )
         } {
             eprintln!("Could not enable the WebView2 ad blocker: {error}");
@@ -658,6 +828,7 @@ unsafe fn install_webview2_network_filter(
     cover_handler: CoverHandler,
     playback_handler: PlaybackHandler,
     settings_handler: SettingsHandler,
+    window_handler: WindowHandler,
 ) -> windows::core::Result<()> {
     use webview2_com::{
         take_pwstr, Microsoft::Web::WebView2::Win32::*, WebResourceRequestedEventHandler,
@@ -723,6 +894,19 @@ unsafe fn install_webview2_network_filter(
                 let source_url = page_context.current_url();
                 if is_aniworld_page(&source_url) {
                     settings_handler();
+                }
+                let status = HSTRING::from("No Content");
+                let headers =
+                    HSTRING::from("Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n");
+                let response =
+                    environment.CreateWebResourceResponse(None, 204, &status, &headers)?;
+                args.SetResponse(&response)?;
+                return Ok(());
+            }
+            if let Some(action) = window_action_request(&url) {
+                let source_url = page_context.current_url();
+                if is_aniworld_page(&source_url) {
+                    window_handler(action);
                 }
                 let status = HSTRING::from("No Content");
                 let headers =
@@ -808,6 +992,28 @@ fn settings_open_request(request_url: &str) -> bool {
     })
 }
 
+fn window_action_request(request_url: &str) -> Option<WindowAction> {
+    let url = tauri::Url::parse(request_url).ok()?;
+    if url.scheme() != "https"
+        || url.host_str() != Some("aniworld-rpc.invalid")
+        || url.path() != "/window"
+    {
+        return None;
+    }
+
+    match url
+        .query_pairs()
+        .find_map(|(key, value)| (key == "action").then(|| value.into_owned()))?
+        .as_str()
+    {
+        "close" => Some(WindowAction::Close),
+        "drag" => Some(WindowAction::Drag),
+        "minimize" => Some(WindowAction::Minimize),
+        "toggle-maximize" => Some(WindowAction::ToggleMaximize),
+        _ => None,
+    }
+}
+
 fn is_aniworld_page(page_url: &str) -> bool {
     tauri::Url::parse(page_url)
         .ok()
@@ -887,6 +1093,7 @@ pub fn install_network_filter(
     _cover_handler: CoverHandler,
     _playback_handler: PlaybackHandler,
     _settings_handler: SettingsHandler,
+    _window_handler: WindowHandler,
 ) -> tauri::Result<()> {
     Ok(())
 }
@@ -1013,15 +1220,46 @@ mod tests {
     }
 
     #[test]
-    fn initialization_script_installs_the_settings_button() {
+    fn initialization_script_installs_the_custom_titlebar() {
         let blocker = AdBlocker {
             engine: Engine::new_with_list_text(""),
         };
         let script = blocker.initialization_script();
 
-        assert!(script.contains("button[data-aniworld-settings-button]"));
-        assert!(script.contains("aria-label\", \"Open settings"));
+        assert!(script.contains("[data-aniworld-titlebar]"));
+        assert!(script.contains("Segoe Fluent Icons"));
+        assert!(script.contains("titlebarButton(\"back\", \"Back\""));
+        assert!(script.contains("titlebarButton(\"close\", \"Close\""));
         assert!(script.contains("https://aniworld-rpc.invalid/settings/open"));
+        assert!(!script.contains("data-aniworld-settings-button"));
+    }
+
+    #[test]
+    fn parses_only_supported_window_actions() {
+        assert_eq!(
+            window_action_request("https://aniworld-rpc.invalid/window?action=minimize"),
+            Some(WindowAction::Minimize)
+        );
+        assert_eq!(
+            window_action_request("https://aniworld-rpc.invalid/window?action=toggle-maximize"),
+            Some(WindowAction::ToggleMaximize)
+        );
+        assert_eq!(
+            window_action_request("https://aniworld-rpc.invalid/window?action=drag"),
+            Some(WindowAction::Drag)
+        );
+        assert_eq!(
+            window_action_request("https://aniworld-rpc.invalid/window?action=close"),
+            Some(WindowAction::Close)
+        );
+        assert_eq!(
+            window_action_request("https://aniworld-rpc.invalid/window?action=unsupported"),
+            None
+        );
+        assert_eq!(
+            window_action_request("https://example.com/window?action=close"),
+            None
+        );
     }
 
     #[test]
