@@ -55,6 +55,7 @@ interface StorageInfo {
 }
 
 type DangerAction = "cache" | "siteData" | "all" | "reset";
+type SettingsCategory = "updates" | "general" | "discord" | "data";
 
 type PresetName = "standard" | "anime-status" | "compact" | "private" | "custom";
 
@@ -156,6 +157,12 @@ const cancelDangerButton = requiredElement<HTMLButtonElement>("cancel-danger");
 const dangerButtons = Array.from(
   document.querySelectorAll<HTMLButtonElement>("[data-danger-action]"),
 );
+const categoryButtons = Array.from(
+  document.querySelectorAll<HTMLButtonElement>("[data-settings-category]"),
+);
+const settingsPanels = Array.from(
+  document.querySelectorAll<HTMLElement>("[data-settings-panel]"),
+);
 
 let settingsLoaded = false;
 let applyingPreset = false;
@@ -211,6 +218,27 @@ const restartApp = (statusElement: HTMLElement, message: string) => {
   void invoke("restart_app").catch((error: unknown) => {
     setStatus(statusElement, errorMessage(error), "error");
   });
+};
+
+const activateCategory = (category: SettingsCategory, moveFocus = false) => {
+  for (const button of categoryButtons) {
+    const active = button.dataset.settingsCategory === category;
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    if (active && moveFocus) {
+      button.focus();
+    }
+  }
+  for (const panel of settingsPanels) {
+    const active = panel.dataset.settingsPanel === category;
+    panel.hidden = !active;
+    if (active) {
+      panel.scrollTop = 0;
+    }
+  }
+  if (category === "data") {
+    loadStorageInfo();
+  }
 };
 
 const runWindowAction = (action: () => Promise<void>) => {
@@ -398,6 +426,36 @@ document
       runWindowAction(() => settingsWindow.startDragging());
     }
   });
+
+for (const [index, button] of categoryButtons.entries()) {
+  button.addEventListener("click", () => {
+    const category = button.dataset.settingsCategory as SettingsCategory | undefined;
+    if (category) {
+      activateCategory(category);
+    }
+  });
+  button.addEventListener("keydown", (event) => {
+    let nextIndex: number | undefined;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      nextIndex = (index + 1) % categoryButtons.length;
+    } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      nextIndex = (index - 1 + categoryButtons.length) % categoryButtons.length;
+    } else if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = categoryButtons.length - 1;
+    }
+    if (nextIndex === undefined) {
+      return;
+    }
+    event.preventDefault();
+    const nextCategory = categoryButtons[nextIndex]?.dataset
+      .settingsCategory as SettingsCategory | undefined;
+    if (nextCategory) {
+      activateCategory(nextCategory, true);
+    }
+  });
+}
 
 document
   .querySelector<HTMLButtonElement>('[data-window-action="close"]')

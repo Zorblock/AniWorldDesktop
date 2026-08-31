@@ -21,13 +21,34 @@
     </header>
 
     <main class="settings-shell">
-      <header class="settings-header">
-        <h1>Settings</h1>
-        <p>Changes to Discord Rich Presence apply immediately after saving.</p>
-      </header>
+      <aside class="settings-sidebar">
+        <header class="settings-header">
+          <h1>Settings</h1>
+          <p>AniWorld Desktop</p>
+        </header>
+        <nav class="category-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
+          <button id="category-updates" type="button" role="tab" aria-controls="panel-updates" aria-selected="true" data-settings-category="updates">
+            <strong>Updates</strong>
+            <small>Version and checks</small>
+          </button>
+          <button id="category-general" type="button" role="tab" aria-controls="panel-general" aria-selected="false" tabindex="-1" data-settings-category="general">
+            <strong>General</strong>
+            <small>Startup and language</small>
+          </button>
+          <button id="category-discord" type="button" role="tab" aria-controls="panel-discord" aria-selected="false" tabindex="-1" data-settings-category="discord">
+            <strong>Discord</strong>
+            <small>Rich Presence</small>
+          </button>
+          <button id="category-data" type="button" role="tab" aria-controls="panel-data" aria-selected="false" tabindex="-1" data-settings-category="data">
+            <strong>Browser data</strong>
+            <small>Storage and reset</small>
+          </button>
+        </nav>
+      </aside>
 
-      <form id="settings-form">
-        <section class="settings-section" aria-labelledby="updates-heading">
+      <form id="settings-form" class="settings-form">
+        <div class="settings-panels">
+        <section id="panel-updates" class="settings-section settings-panel" role="tabpanel" aria-labelledby="category-updates" data-settings-panel="updates">
           <div class="section-heading">
             <h2 id="updates-heading">Updates</h2>
             <p id="current-version">Current version</p>
@@ -45,7 +66,7 @@
           </div>
         </section>
 
-        <section class="settings-section" aria-labelledby="general-heading">
+        <section id="panel-general" class="settings-section settings-panel" role="tabpanel" aria-labelledby="category-general" data-settings-panel="general" hidden>
           <div class="section-heading">
             <h2 id="general-heading">General</h2>
           </div>
@@ -75,7 +96,7 @@
           </div>
         </section>
 
-        <section class="settings-section" aria-labelledby="discord-heading">
+        <section id="panel-discord" class="settings-section settings-panel" role="tabpanel" aria-labelledby="category-discord" data-settings-panel="discord" hidden>
           <div class="section-heading">
             <h2 id="discord-heading">Discord Rich Presence</h2>
             <p>Control what Discord receives while you browse and watch.</p>
@@ -161,7 +182,7 @@
           </fieldset>
         </section>
 
-        <section class="settings-section settings-section--danger" aria-labelledby="data-heading">
+        <section id="panel-data" class="settings-section settings-section--danger settings-panel" role="tabpanel" aria-labelledby="category-data" data-settings-panel="data" hidden>
           <div class="section-heading">
             <h2 id="data-heading">Browser data</h2>
             <p>Manage data stored by the embedded browser on this device.</p>
@@ -205,6 +226,7 @@
           </div>
           <span id="storage-status" class="status-text" role="status"></span>
         </section>
+        </div>
 
         <footer class="form-actions">
           <span id="save-status" class="status-text" role="status"></span>
