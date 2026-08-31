@@ -1,42 +1,117 @@
 use crate::process_shutdown;
 use serde::Serialize;
 use std::{
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, RwLock,
+    },
     time::Duration,
 };
-use tauri::AppHandle;
-#[cfg(target_os = "windows")]
-use tauri::Manager;
-#[cfg(not(target_os = "windows"))]
-use tauri::{WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_updater::UpdaterExt;
-
-#[cfg(target_os = "windows")]
-use std::sync::mpsc::{self, Sender};
 
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(15);
 const INSTALL_STATUS_DELAY: Duration = Duration::from_millis(600);
-static UPDATE_CHECK_RUNNING: AtomicBool = AtomicBool::new(false);
 
-struct UpdateCheckGuard;
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateUiState {
+    phase: UpdatePhase,
+    version: Option<String>,
+    percentage: Option<u8>,
+    message: Option<String>,
+}
 
-impl UpdateCheckGuard {
-    fn acquire() -> tauri_plugin_updater::Result<Self> {
-        UPDATE_CHECK_RUNNING
-            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map(|_| Self)
-            .map_err(|_| {
-                tauri_plugin_updater::Error::from(std::io::Error::other(
-                    "An update check is already running",
-                ))
-            })
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum UpdatePhase {
+    Hidden,
+    Available,
+    Downloading,
+    Verifying,
+    Preparing,
+    Installing,
+    Error,
+}
+
+impl Default for UpdateUiState {
+    fn default() -> Self {
+        Self {
+            phase: UpdatePhase::Hidden,
+            version: None,
+            percentage: None,
+            message: None,
+        }
     }
 }
 
-impl Drop for UpdateCheckGuard {
+pub struct UpdateController {
+    state: RwLock<UpdateUiState>,
+    operation_running: AtomicBool,
+}
+
+impl Default for UpdateController {
+    fn default() -> Self {
+        Self {
+            state: RwLock::new(UpdateUiState::default()),
+            operation_running: AtomicBool::new(false),
+        }
+    }
+}
+
+impl UpdateController {
+    fn acquire_operation(&self) -> Result<UpdateOperationGuard<'_>, String> {
+        self.operation_running
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| UpdateOperationGuard(&self.operation_running))
+            .map_err(|_| "An update operation is already running".to_owned())
+    }
+
+    fn set_state(&self, app: &AppHandle, state: UpdateUiState) {
+        if let Ok(mut current) = self.state.write() {
+            *current = state;
+        }
+        if let Some(window) = app.get_webview_window("main") {
+            self.publish_to_window(&window);
+        }
+    }
+
+    pub fn publish_to_window(&self, window: &WebviewWindow) {
+        let state = self
+            .state
+            .read()
+            .map(|state| state.clone())
+            .unwrap_or_default();
+        if let Ok(state) = serde_json::to_string(&state) {
+            let _ = window.eval(format!("window.__aniworldSetUpdateState?.({state});"));
+        }
+    }
+
+    fn available_version(&self) -> Option<String> {
+        self.state
+            .read()
+            .ok()
+            .and_then(|state| state.version.clone())
+    }
+
+    fn publish_error(&self, app: &AppHandle, version: Option<String>, error: &str) {
+        self.set_state(
+            app,
+            UpdateUiState {
+                phase: UpdatePhase::Error,
+                version,
+                percentage: None,
+                message: Some(short_error(error)),
+            },
+        );
+    }
+}
+
+struct UpdateOperationGuard<'a>(&'a AtomicBool);
+
+impl Drop for UpdateOperationGuard<'_> {
     fn drop(&mut self) {
-        UPDATE_CHECK_RUNNING.store(false, Ordering::Release);
+        self.0.store(false, Ordering::Release);
     }
 }
 
@@ -47,387 +122,216 @@ pub struct UpdateCheckResult {
     pub available_version: Option<String>,
 }
 
-#[cfg(target_os = "windows")]
-enum ProgressCommand {
-    Update {
-        status: String,
-        detail: String,
-        percentage: Option<u8>,
-    },
-    Close,
-}
-
-#[cfg(target_os = "windows")]
-#[derive(Clone)]
-struct ProgressWindow {
-    sender: Sender<ProgressCommand>,
-}
-
-#[cfg(not(target_os = "windows"))]
-#[derive(Clone)]
-struct ProgressWindow(WebviewWindow);
-
-pub fn check_on_start(app: AppHandle) {
+pub fn check_on_start(app: AppHandle, controller: Arc<UpdateController>) {
     if cfg!(debug_assertions) && std::env::var("ANIWORLD_UPDATE_CHECK").as_deref() != Ok("1") {
         return;
     }
 
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = check_for_update(app).await {
+        if let Err(error) = check_for_update(&app, &controller).await {
             eprintln!("Update check failed: {error}");
         }
     });
 }
 
-pub async fn check_manually(app: AppHandle) -> Result<UpdateCheckResult, String> {
-    check_for_update(app)
-        .await
-        .map_err(|error| format!("Update check failed: {error}"))
+pub async fn check_manually(
+    app: AppHandle,
+    controller: Arc<UpdateController>,
+) -> Result<UpdateCheckResult, String> {
+    check_for_update(&app, &controller).await
 }
 
-async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<UpdateCheckResult> {
-    let _check_guard = UpdateCheckGuard::acquire()?;
+pub fn install_requested(app: AppHandle, controller: Arc<UpdateController>) {
+    tauri::async_runtime::spawn(async move {
+        let version = controller.available_version();
+        if let Err(error) = install_available_update(&app, &controller).await {
+            eprintln!("Update installation failed: {error}");
+            controller.publish_error(&app, version, &error);
+        }
+    });
+}
+
+async fn check_for_update(
+    app: &AppHandle,
+    controller: &Arc<UpdateController>,
+) -> Result<UpdateCheckResult, String> {
+    let _operation = controller.acquire_operation()?;
     let current_version = env!("CARGO_PKG_VERSION").to_owned();
-    let updater = app.updater_builder().timeout(UPDATE_TIMEOUT).build()?;
-    let Some(update) = updater.check().await? else {
-        return Ok(UpdateCheckResult {
-            current_version,
-            available_version: None,
-        });
-    };
+    let updater = app
+        .updater_builder()
+        .timeout(UPDATE_TIMEOUT)
+        .build()
+        .map_err(|error| error.to_string())?;
+    let update = updater.check().await.map_err(|error| error.to_string())?;
+    let available_version = update.map(|update| update.version);
 
-    let version = update.version.clone();
-    let result = UpdateCheckResult {
+    let state = match available_version.as_ref() {
+        Some(version) => UpdateUiState {
+            phase: UpdatePhase::Available,
+            version: Some(version.clone()),
+            percentage: None,
+            message: None,
+        },
+        None => UpdateUiState::default(),
+    };
+    controller.set_state(app, state);
+
+    Ok(UpdateCheckResult {
         current_version,
-        available_version: Some(version.clone()),
-    };
-    let accepted = app
-        .dialog()
-        .message(format!(
-            "AniWorld Desktop {version} is available.\n\nDownload and install it now?"
-        ))
-        .title(format!("New Version {version}"))
-        .kind(MessageDialogKind::Info)
-        .buttons(MessageDialogButtons::YesNo)
-        .blocking_show();
+        available_version,
+    })
+}
 
-    if !accepted {
-        return Ok(result);
+async fn install_available_update(
+    app: &AppHandle,
+    controller: &Arc<UpdateController>,
+) -> Result<(), String> {
+    let _operation = controller.acquire_operation()?;
+    if let Some(version) = controller.available_version() {
+        controller.set_state(
+            app,
+            progress_state(UpdatePhase::Preparing, &version, None, "Preparing download"),
+        );
     }
-
-    let _update_lock = match process_shutdown::acquire_update_lock() {
-        Ok(Some(lock)) => lock,
-        Ok(None) => {
-            app.dialog()
-                .message("Another AniWorld Desktop window is already installing this update.")
-                .title("Update Already Running")
-                .kind(MessageDialogKind::Info)
-                .show(|_| {});
-            return Ok(result);
-        }
-        Err(message) => {
-            app.dialog()
-                .message(format!("The update could not be started:\n\n{message}"))
-                .title("Update Failed")
-                .kind(MessageDialogKind::Error)
-                .show(|_| {});
-            return Err(std::io::Error::other(message).into());
-        }
+    let updater = app
+        .updater_builder()
+        .timeout(UPDATE_TIMEOUT)
+        .build()
+        .map_err(|error| error.to_string())?;
+    let Some(update) = updater.check().await.map_err(|error| error.to_string())? else {
+        controller.set_state(app, UpdateUiState::default());
+        return Ok(());
     };
+    let version = update.version.clone();
 
-    let progress_window = create_progress_window(&app, &version)
-        .map_err(|message| tauri_plugin_updater::Error::from(std::io::Error::other(message)))?;
-    let download_window = progress_window.clone();
-    let verification_window = progress_window.clone();
+    let _update_lock = process_shutdown::acquire_update_lock()
+        .map_err(|message| format!("The update could not be started: {message}"))?
+        .ok_or_else(|| {
+            "Another AniWorld Desktop window is already installing the update".to_owned()
+        })?;
+
+    controller.set_state(
+        app,
+        progress_state(
+            UpdatePhase::Downloading,
+            &version,
+            Some(0),
+            "Downloading update",
+        ),
+    );
+    let download_app = app.clone();
+    let download_controller = Arc::clone(controller);
+    let download_version = version.clone();
+    let verify_app = app.clone();
+    let verify_controller = Arc::clone(controller);
+    let verify_version = version.clone();
     let mut downloaded = 0_u64;
-
-    let bytes = match update
+    let mut last_percentage = Some(0_u8);
+    let bytes = update
         .download(
             move |chunk_length, content_length| {
                 downloaded = downloaded.saturating_add(chunk_length as u64);
-                show_download_progress(&download_window, downloaded, content_length);
+                let percentage = content_length.filter(|total| *total > 0).map(|total| {
+                    downloaded
+                        .saturating_mul(100)
+                        .saturating_div(total)
+                        .min(100) as u8
+                });
+                if percentage.is_none() || percentage == last_percentage {
+                    return;
+                }
+                last_percentage = percentage;
+                download_controller.set_state(
+                    &download_app,
+                    progress_state(
+                        UpdatePhase::Downloading,
+                        &download_version,
+                        percentage,
+                        "Downloading update",
+                    ),
+                );
             },
             move || {
-                set_progress_state(
-                    &verification_window,
-                    "Verifying update…",
-                    "Checking the downloaded update signature",
-                    None,
+                verify_controller.set_state(
+                    &verify_app,
+                    progress_state(
+                        UpdatePhase::Verifying,
+                        &verify_version,
+                        Some(100),
+                        "Verifying update",
+                    ),
                 );
             },
         )
         .await
-    {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            show_update_error(&app, &progress_window, &error);
-            return Err(error);
-        }
-    };
+        .map_err(|error| error.to_string())?;
 
-    set_progress_state(
-        &progress_window,
-        "Preparing installation…",
-        "Closing other AniWorld Desktop windows",
-        Some(100),
+    controller.set_state(
+        app,
+        progress_state(
+            UpdatePhase::Preparing,
+            &version,
+            Some(100),
+            "Preparing installation",
+        ),
     );
+    tauri::async_runtime::spawn_blocking(process_shutdown::close_other_instances)
+        .await
+        .map_err(|error| format!("Could not close other AniWorld Desktop windows: {error}"))?
+        .map_err(|message| format!("Could not close other AniWorld Desktop windows: {message}"))?;
 
-    let closed_instances =
-        match tauri::async_runtime::spawn_blocking(process_shutdown::close_other_instances).await {
-            Ok(Ok(count)) => count,
-            Ok(Err(message)) => {
-                let error = tauri_plugin_updater::Error::from(std::io::Error::other(message));
-                show_update_error(&app, &progress_window, &error);
-                return Err(error);
-            }
-            Err(error) => {
-                let error = tauri_plugin_updater::Error::from(std::io::Error::other(format!(
-                    "Could not close other AniWorld Desktop windows: {error}"
-                )));
-                show_update_error(&app, &progress_window, &error);
-                return Err(error);
-            }
-        };
-
-    let install_detail = match closed_instances {
-        0 => "AniWorld Desktop will close and restart automatically".to_owned(),
-        1 => "Closed 1 other window. AniWorld Desktop will restart automatically".to_owned(),
-        count => {
-            format!("Closed {count} other windows. AniWorld Desktop will restart automatically")
-        }
-    };
-    set_progress_state(
-        &progress_window,
-        "Installing update…",
-        &install_detail,
-        Some(100),
+    controller.set_state(
+        app,
+        progress_state(
+            UpdatePhase::Installing,
+            &version,
+            Some(100),
+            "Installing update",
+        ),
     );
     let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(INSTALL_STATUS_DELAY)).await;
-
-    if let Err(error) = update.install(bytes) {
-        show_update_error(&app, &progress_window, &error);
-        return Err(error);
-    }
+    update.install(bytes).map_err(|error| error.to_string())?;
 
     #[cfg(not(target_os = "windows"))]
     app.restart();
 
-    Ok(result)
+    Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
-fn create_progress_window(app: &AppHandle, version: &str) -> Result<ProgressWindow, String> {
-    let version = serde_json::json!(version);
-    WebviewWindowBuilder::new(
-        app,
-        "updater-progress",
-        WebviewUrl::App("update.html".into()),
-    )
-    .title("Updating AniWorld Desktop")
-    .inner_size(480.0, 270.0)
-    .resizable(false)
-    .maximizable(false)
-    .minimizable(false)
-    .closable(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .center()
-    .initialization_script(format!(
-        r#"
-        window.__ANIWORLD_UPDATE_VERSION__ = {version};
-        window.__ANIWORLD_UPDATER_STATE__ = {{
-          status: "Preparing update…",
-          detail: "The app will restart automatically",
-          percentage: null
-        }};
-        window.setUpdaterState = (state) => {{
-          window.__ANIWORLD_UPDATER_STATE__ = state;
-          window.dispatchEvent(new CustomEvent("aniworld-updater-state", {{ detail: state }}));
-        }};
-        "#
-    ))
-    .build()
-    .map(ProgressWindow)
-    .map_err(|error| error.to_string())
-}
-
-#[cfg(target_os = "windows")]
-fn create_progress_window(app: &AppHandle, version: &str) -> Result<ProgressWindow, String> {
-    let (sender, receiver) = mpsc::channel();
-    let (ready_sender, ready_receiver) = mpsc::sync_channel(1);
-    let version = version.to_owned();
-    let parent_window = app
-        .get_webview_window("main")
-        .and_then(|window| window.hwnd().ok())
-        .map(|handle| handle.0 as isize);
-
-    std::thread::Builder::new()
-        .name("aniworld-native-updater".to_owned())
-        .spawn(move || native_progress_dialog(version, parent_window, receiver, ready_sender))
-        .map_err(|error| format!("Could not start the update progress dialog: {error}"))?;
-
-    ready_receiver
-        .recv_timeout(Duration::from_secs(3))
-        .map_err(|error| format!("The update progress dialog did not start: {error}"))??;
-
-    Ok(ProgressWindow { sender })
-}
-
-#[cfg(target_os = "windows")]
-fn native_progress_dialog(
-    version: String,
-    parent_window: Option<isize>,
-    receiver: mpsc::Receiver<ProgressCommand>,
-    ready_sender: mpsc::SyncSender<Result<(), String>>,
-) {
-    use windows::core::{IUnknown, HSTRING};
-    use windows::Win32::{
-        Foundation::HWND,
-        System::Com::{
-            CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER,
-            COINIT_APARTMENTTHREADED,
-        },
-        UI::Shell::{
-            CLSID_ProgressDialog, IProgressDialog, PROGDLG_MODAL, PROGDLG_NOCANCEL,
-            PROGDLG_NOMINIMIZE, PROGDLG_NOTIME,
-        },
-    };
-
-    let initialized = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
-    if let Err(error) = initialized.ok() {
-        let _ = ready_sender.send(Err(format!(
-            "Could not initialize the native update dialog: {error}"
-        )));
-        return;
-    }
-
-    let dialog: IProgressDialog = match unsafe {
-        CoCreateInstance(
-            &CLSID_ProgressDialog,
-            None::<&IUnknown>,
-            CLSCTX_INPROC_SERVER,
-        )
-    } {
-        Ok(dialog) => dialog,
-        Err(error) => {
-            let _ = ready_sender.send(Err(format!(
-                "Could not create the native update dialog: {error}"
-            )));
-            unsafe { CoUninitialize() };
-            return;
-        }
-    };
-
-    let started = unsafe {
-        (|| -> windows::core::Result<()> {
-            dialog.SetTitle(&HSTRING::from("AniWorld Desktop Update"))?;
-            dialog.StartProgressDialog(
-                parent_window.map(|handle| HWND(handle as *mut _)),
-                None::<&IUnknown>,
-                PROGDLG_MODAL | PROGDLG_NOCANCEL | PROGDLG_NOMINIMIZE | PROGDLG_NOTIME,
-                None,
-            )?;
-            dialog.SetLine(1, &HSTRING::from("Preparing update…"), false, None)?;
-            dialog.SetLine(
-                2,
-                &HSTRING::from("The app will restart automatically"),
-                false,
-                None,
-            )?;
-            dialog.SetLine(3, &HSTRING::from(format!("Version {version}")), false, None)?;
-            dialog.SetProgress(0, 100)
-        })()
-    };
-
-    if let Err(error) = started {
-        let _ = ready_sender.send(Err(format!(
-            "Could not show the native update dialog: {error}"
-        )));
-        let _ = unsafe { dialog.StopProgressDialog() };
-        drop(dialog);
-        unsafe { CoUninitialize() };
-        return;
-    }
-
-    let _ = ready_sender.send(Ok(()));
-    while let Ok(command) = receiver.recv() {
-        match command {
-            ProgressCommand::Update {
-                status,
-                detail,
-                percentage,
-            } => unsafe {
-                let _ = dialog.SetLine(1, &HSTRING::from(status), false, None);
-                let _ = dialog.SetLine(2, &HSTRING::from(detail), false, None);
-                let _ = dialog.SetProgress(percentage.unwrap_or(0) as u32, 100);
-            },
-            ProgressCommand::Close => break,
-        }
-    }
-
-    let _ = unsafe { dialog.StopProgressDialog() };
-    drop(dialog);
-    unsafe { CoUninitialize() };
-}
-
-fn show_download_progress(window: &ProgressWindow, downloaded: u64, total: Option<u64>) {
-    let downloaded_mb = downloaded as f64 / 1_048_576.0;
-    let (detail, percentage) = match total.filter(|total| *total > 0) {
-        Some(total) => {
-            let total_mb = total as f64 / 1_048_576.0;
-            let percentage = downloaded
-                .saturating_mul(100)
-                .saturating_div(total)
-                .min(100) as u8;
-            (
-                format!("{downloaded_mb:.1} MB of {total_mb:.1} MB"),
-                Some(percentage),
-            )
-        }
-        None => (format!("{downloaded_mb:.1} MB downloaded"), None),
-    };
-
-    set_progress_state(window, "Downloading update…", &detail, percentage);
-}
-
-#[cfg(target_os = "windows")]
-fn set_progress_state(window: &ProgressWindow, status: &str, detail: &str, percentage: Option<u8>) {
-    let _ = window.sender.send(ProgressCommand::Update {
-        status: status.to_owned(),
-        detail: detail.to_owned(),
+fn progress_state(
+    phase: UpdatePhase,
+    version: &str,
+    percentage: Option<u8>,
+    message: &str,
+) -> UpdateUiState {
+    UpdateUiState {
+        phase,
+        version: Some(version.to_owned()),
         percentage,
-    });
+        message: Some(message.to_owned()),
+    }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn set_progress_state(window: &ProgressWindow, status: &str, detail: &str, percentage: Option<u8>) {
-    let state = serde_json::json!({
-        "status": status,
-        "detail": detail,
-        "percentage": percentage,
-    });
-    let _ = window.0.eval(format!("window.setUpdaterState?.({state});"));
+fn short_error(error: &str) -> String {
+    error
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(160)
+        .collect()
 }
 
-#[cfg(target_os = "windows")]
-fn close_progress_window(window: &ProgressWindow) {
-    let _ = window.sender.send(ProgressCommand::Close);
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[cfg(not(target_os = "windows"))]
-fn close_progress_window(window: &ProgressWindow) {
-    let _ = window.0.close();
-}
+    #[test]
+    fn update_errors_are_compact_enough_for_the_titlebar_tooltip() {
+        let error = format!("Download failed\n{}", "x".repeat(300));
+        let error = short_error(&error);
 
-fn show_update_error(
-    app: &AppHandle,
-    progress_window: &ProgressWindow,
-    error: &tauri_plugin_updater::Error,
-) {
-    close_progress_window(progress_window);
-    app.dialog()
-        .message(format!("The update could not be installed:\n\n{error}"))
-        .title("Update Failed")
-        .kind(MessageDialogKind::Error)
-        .show(|_| {});
+        assert!(!error.contains('\n'));
+        assert_eq!(error.chars().count(), 160);
+    }
 }

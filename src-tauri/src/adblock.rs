@@ -14,7 +14,35 @@ use tauri::WebviewWindow;
 pub type CoverHandler = Arc<dyn Fn(String, String) + Send + Sync + 'static>;
 pub type PlaybackHandler = Arc<dyn Fn(bool, bool, u64, u64, u32) + Send + Sync + 'static>;
 pub type SettingsHandler = Arc<dyn Fn() + Send + Sync + 'static>;
+pub type UpdateHandler = Arc<dyn Fn() + Send + Sync + 'static>;
 pub type WindowHandler = Arc<dyn Fn(WindowAction) + Send + Sync + 'static>;
+
+#[derive(Clone)]
+pub struct NetworkHandlers {
+    cover: CoverHandler,
+    playback: PlaybackHandler,
+    settings: SettingsHandler,
+    update: UpdateHandler,
+    window: WindowHandler,
+}
+
+impl NetworkHandlers {
+    pub fn new(
+        cover: CoverHandler,
+        playback: PlaybackHandler,
+        settings: SettingsHandler,
+        update: UpdateHandler,
+        window: WindowHandler,
+    ) -> Self {
+        Self {
+            cover,
+            playback,
+            settings,
+            update,
+            window,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WindowAction {
@@ -437,6 +465,21 @@ impl AdBlocker {
     }}).catch(() => {{}});
   }};
 
+  const installUpdate = () => {{
+    fetch("https://aniworld-rpc.invalid/update/install", {{
+      cache: "no-store",
+      credentials: "omit",
+      mode: "no-cors"
+    }}).catch(() => {{}});
+  }};
+
+  let renderUpdateState = () => {{}};
+  window.__ANIWORLD_UPDATE_STATE__ = window.__ANIWORLD_UPDATE_STATE__ || {{ phase: "hidden" }};
+  window.__aniworldSetUpdateState = (state) => {{
+    window.__ANIWORLD_UPDATE_STATE__ = state;
+    renderUpdateState(state);
+  }};
+
   const installTitlebar = () => {{
     if (document.querySelector("[data-aniworld-titlebar]")) {{
       return;
@@ -541,6 +584,56 @@ impl AdBlocker {
         margin-left: 4px !important;
         border-left: 1px solid rgba(255, 255, 255, 0.06) !important;
       }}
+      [data-aniworld-update-control] {{
+        position: relative !important;
+        display: none !important;
+        align-items: stretch !important;
+        color: #c5ccda !important;
+      }}
+      [data-aniworld-update-control][data-visible="true"] {{
+        display: flex !important;
+      }}
+      [data-aniworld-update-progress] {{
+        display: flex !important;
+        align-items: center !important;
+        min-width: 34px !important;
+        padding: 0 8px 0 0 !important;
+        color: #aeb7c8 !important;
+        font-size: 11px !important;
+        font-variant-numeric: tabular-nums !important;
+        white-space: nowrap !important;
+      }}
+      [data-aniworld-update-progress][hidden] {{
+        display: none !important;
+      }}
+      [data-aniworld-update-tooltip] {{
+        position: absolute !important;
+        top: 51px !important;
+        right: 0 !important;
+        width: max-content !important;
+        max-width: 280px !important;
+        padding: 7px 9px !important;
+        border: 1px solid #353d4b !important;
+        border-radius: 4px !important;
+        opacity: 0 !important;
+        color: #e8ebf2 !important;
+        background: #1a202a !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28) !important;
+        font-size: 12px !important;
+        font-weight: 400 !important;
+        line-height: 1.35 !important;
+        pointer-events: none !important;
+        transform: translateY(-2px) !important;
+        transition: opacity 100ms ease, transform 100ms ease !important;
+      }}
+      [data-aniworld-update-control]:hover [data-aniworld-update-tooltip],
+      [data-aniworld-update-control]:focus-within [data-aniworld-update-tooltip] {{
+        opacity: 1 !important;
+        transform: translateY(0) !important;
+      }}
+      button[data-aniworld-titlebar-button="update"]:disabled {{
+        opacity: 0.7 !important;
+      }}
       button[data-aniworld-titlebar-button="close"] {{
         width: 48px !important;
         min-width: 48px !important;
@@ -628,6 +721,56 @@ impl AdBlocker {
     dragRegion.appendChild(pageTitle);
     dragRegion.addEventListener("mousedown", startDragging);
 
+    const updateControl = document.createElement("div");
+    updateControl.dataset.aniworldUpdateControl = "true";
+    const updateButton = titlebarButton("update", "Install update", "\uE896", () => {{
+      updateButton.disabled = true;
+      updateProgress.hidden = false;
+      updateProgress.textContent = "…";
+      installUpdate();
+    }});
+    updateButton.removeAttribute("title");
+    const updateProgress = document.createElement("span");
+    updateProgress.dataset.aniworldUpdateProgress = "true";
+    updateProgress.hidden = true;
+    const updateTooltip = document.createElement("span");
+    updateTooltip.dataset.aniworldUpdateTooltip = "true";
+    updateTooltip.setAttribute("role", "tooltip");
+    updateControl.append(updateButton, updateProgress, updateTooltip);
+
+    renderUpdateState = (state) => {{
+      const phase = state?.phase || "hidden";
+      const version = state?.version || "";
+      const busy = ["downloading", "verifying", "preparing", "installing"].includes(phase);
+      updateControl.dataset.visible = String(phase !== "hidden");
+      updateButton.disabled = busy;
+
+      if (phase === "available") {{
+        updateProgress.hidden = true;
+        updateProgress.textContent = "";
+        updateTooltip.textContent = `Install Update ${{version}}`;
+      }} else if (phase === "error") {{
+        updateProgress.hidden = false;
+        updateProgress.textContent = "Retry";
+        updateTooltip.textContent = state?.message
+          ? `Update failed: ${{state.message}}. Click to retry.`
+          : "Update failed. Click to retry.";
+      }} else if (busy) {{
+        updateProgress.hidden = false;
+        updateProgress.textContent = Number.isFinite(state?.percentage)
+          ? `${{state.percentage}}%`
+          : "…";
+        updateTooltip.textContent = `${{state?.message || "Installing update"}} ${{version}}`;
+      }} else {{
+        updateProgress.hidden = true;
+        updateProgress.textContent = "";
+        updateTooltip.textContent = "";
+      }}
+
+      updateButton.setAttribute("aria-label", updateTooltip.textContent || "Install update");
+    }};
+    renderUpdateState(window.__ANIWORLD_UPDATE_STATE__);
+
     const settingsButton = titlebarButton("settings", "Settings", "\uE713", openSettings);
 
     const windowControls = document.createElement("div");
@@ -639,7 +782,7 @@ impl AdBlocker {
       titlebarButton("close", "Close", "\uE8BB", () => sendWindowAction("close"))
     );
 
-    titlebar.append(brand, navigation, dragRegion, settingsButton, windowControls);
+    titlebar.append(brand, navigation, dragRegion, updateControl, settingsButton, windowControls);
     document.documentElement.classList.add("aniworld-desktop-framed");
     (document.head || document.documentElement).appendChild(style);
     document.body.prepend(titlebar);
@@ -794,22 +937,11 @@ pub fn install_network_filter(
     window: &WebviewWindow,
     blocker: Arc<AdBlocker>,
     page_context: PageContext,
-    cover_handler: CoverHandler,
-    playback_handler: PlaybackHandler,
-    settings_handler: SettingsHandler,
-    window_handler: WindowHandler,
+    handlers: NetworkHandlers,
 ) -> tauri::Result<()> {
     window.with_webview(move |platform_webview| {
         if let Err(error) = unsafe {
-            install_webview2_network_filter(
-                platform_webview,
-                blocker,
-                page_context,
-                cover_handler,
-                playback_handler,
-                settings_handler,
-                window_handler,
-            )
+            install_webview2_network_filter(platform_webview, blocker, page_context, handlers)
         } {
             eprintln!("Could not enable the WebView2 ad blocker: {error}");
         }
@@ -821,10 +953,7 @@ unsafe fn install_webview2_network_filter(
     platform_webview: tauri::webview::PlatformWebview,
     blocker: Arc<AdBlocker>,
     page_context: PageContext,
-    cover_handler: CoverHandler,
-    playback_handler: PlaybackHandler,
-    settings_handler: SettingsHandler,
-    window_handler: WindowHandler,
+    handlers: NetworkHandlers,
 ) -> windows::core::Result<()> {
     use webview2_com::{
         take_pwstr, Microsoft::Web::WebView2::Win32::*, WebResourceRequestedEventHandler,
@@ -861,7 +990,7 @@ unsafe fn install_webview2_network_filter(
             if let Some(candidate) = cover_update(&url) {
                 let source_url = page_context.current_url();
                 if let Some(cover_url) = anime_cover_url(&candidate, &source_url) {
-                    cover_handler(source_url, cover_url);
+                    (handlers.cover)(source_url, cover_url);
                 }
                 let status = HSTRING::from("No Content");
                 let headers =
@@ -876,7 +1005,7 @@ unsafe fn install_webview2_network_filter(
             {
                 let source_url = page_context.current_url();
                 if is_aniworld_episode_page(&source_url) {
-                    playback_handler(playing, seeking, position_ms, duration_ms, rate_milli);
+                    (handlers.playback)(playing, seeking, position_ms, duration_ms, rate_milli);
                 }
                 let status = HSTRING::from("No Content");
                 let headers =
@@ -889,7 +1018,20 @@ unsafe fn install_webview2_network_filter(
             if settings_open_request(&url) {
                 let source_url = page_context.current_url();
                 if is_aniworld_page(&source_url) {
-                    settings_handler();
+                    (handlers.settings)();
+                }
+                let status = HSTRING::from("No Content");
+                let headers =
+                    HSTRING::from("Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n");
+                let response =
+                    environment.CreateWebResourceResponse(None, 204, &status, &headers)?;
+                args.SetResponse(&response)?;
+                return Ok(());
+            }
+            if update_install_request(&url) {
+                let source_url = page_context.current_url();
+                if is_aniworld_page(&source_url) {
+                    (handlers.update)();
                 }
                 let status = HSTRING::from("No Content");
                 let headers =
@@ -902,7 +1044,7 @@ unsafe fn install_webview2_network_filter(
             if let Some(action) = window_action_request(&url) {
                 let source_url = page_context.current_url();
                 if is_aniworld_page(&source_url) {
-                    window_handler(action);
+                    (handlers.window)(action);
                 }
                 let status = HSTRING::from("No Content");
                 let headers =
@@ -922,7 +1064,7 @@ unsafe fn install_webview2_network_filter(
 
             let source_url = page_context.current_url();
             if let Some(cover_url) = anime_cover_url(&url, &source_url) {
-                cover_handler(source_url.clone(), cover_url);
+                (handlers.cover)(source_url.clone(), cover_url);
             }
             let request_type = webview2_request_type(context);
             if blocker.blocks(&url, &source_url, request_type, &method) {
@@ -985,6 +1127,14 @@ fn settings_open_request(request_url: &str) -> bool {
         url.scheme() == "https"
             && url.host_str() == Some("aniworld-rpc.invalid")
             && url.path() == "/settings/open"
+    })
+}
+
+fn update_install_request(request_url: &str) -> bool {
+    tauri::Url::parse(request_url).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.host_str() == Some("aniworld-rpc.invalid")
+            && url.path() == "/update/install"
     })
 }
 
@@ -1086,10 +1236,7 @@ pub fn install_network_filter(
     _window: &WebviewWindow,
     _blocker: Arc<AdBlocker>,
     _page_context: PageContext,
-    _cover_handler: CoverHandler,
-    _playback_handler: PlaybackHandler,
-    _settings_handler: SettingsHandler,
-    _window_handler: WindowHandler,
+    _handlers: NetworkHandlers,
 ) -> tauri::Result<()> {
     Ok(())
 }
@@ -1216,6 +1363,19 @@ mod tests {
     }
 
     #[test]
+    fn recognizes_only_the_internal_update_install_bridge() {
+        assert!(update_install_request(
+            "https://aniworld-rpc.invalid/update/install"
+        ));
+        assert!(!update_install_request(
+            "https://aniworld-rpc.invalid/update/check"
+        ));
+        assert!(!update_install_request(
+            "https://example.com/update/install"
+        ));
+    }
+
+    #[test]
     fn initialization_script_installs_the_custom_titlebar() {
         let blocker = AdBlocker {
             engine: Engine::new_with_list_text(""),
@@ -1227,6 +1387,10 @@ mod tests {
         assert!(script.contains("titlebarButton(\"back\", \"Back\""));
         assert!(script.contains("titlebarButton(\"close\", \"Close\""));
         assert!(script.contains("https://aniworld-rpc.invalid/settings/open"));
+        assert!(script.contains("https://aniworld-rpc.invalid/update/install"));
+        assert!(script.contains("dataset.aniworldUpdateTooltip"));
+        assert!(script.contains("Install Update"));
+        assert!(script.contains("updateButton.removeAttribute(\"title\")"));
         assert!(script.contains("min-height: calc(100vh - 46px) !important"));
         assert!(!script.contains("overflow: auto !important"));
         assert!(!script.contains("data-aniworld-settings-button"));
@@ -1265,6 +1429,6 @@ mod tests {
         let cover = "https://aniworld.to/public/img/cover/serial-experiments-lain-stream-cover-VrUstkIXsXoHFWITlqWOOh8egVAtK3QA_220x330.jpg";
         let bridge_url = "https://aniworld-rpc.invalid/cover?url=https%3A%2F%2Faniworld.to%2Fpublic%2Fimg%2Fcover%2Fserial-experiments-lain-stream-cover-VrUstkIXsXoHFWITlqWOOh8egVAtK3QA_220x330.jpg";
 
-        assert_eq!(cover_update(&bridge_url).as_deref(), Some(cover));
+        assert_eq!(cover_update(bridge_url).as_deref(), Some(cover));
     }
 }

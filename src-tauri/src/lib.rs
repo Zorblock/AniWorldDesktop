@@ -6,8 +6,8 @@ mod settings;
 mod updater;
 
 use adblock::{
-    AdBlocker, CoverHandler, PageContext, PlaybackHandler, SettingsHandler, WindowAction,
-    WindowHandler,
+    AdBlocker, CoverHandler, NetworkHandlers, PageContext, PlaybackHandler, SettingsHandler,
+    UpdateHandler, WindowAction, WindowHandler,
 };
 use presence::{Activity, DiscordPresence};
 use serde::Serialize;
@@ -27,6 +27,7 @@ const APP_TITLE: &str = concat!("AniWorld Desktop v", env!("CARGO_PKG_VERSION"))
 struct SettingsRuntime {
     store: Arc<SettingsStore>,
     presence: Arc<DiscordPresence>,
+    updater: Arc<updater::UpdateController>,
 }
 
 #[derive(Serialize)]
@@ -62,8 +63,11 @@ fn reset_settings(state: tauri::State<'_, SettingsRuntime>) -> Result<AppSetting
 }
 
 #[tauri::command]
-async fn check_for_updates(app: tauri::AppHandle) -> Result<updater::UpdateCheckResult, String> {
-    updater::check_manually(app).await
+async fn check_for_updates(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SettingsRuntime>,
+) -> Result<updater::UpdateCheckResult, String> {
+    updater::check_manually(app, Arc::clone(&state.updater)).await
 }
 
 fn show_settings_window(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -119,7 +123,6 @@ fn user_data_directory(fallback: &Path) -> PathBuf {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             load_settings,
@@ -135,6 +138,7 @@ pub fn run() {
             let page_context = PageContext::new(ANIWORLD_URL);
             let settings_store = Arc::new(SettingsStore::load(&data_directory));
             let initial_settings = settings_store.get();
+            let update_controller = Arc::new(updater::UpdateController::default());
             let presence = Arc::new(DiscordPresence::start(
                 DISCORD_CLIENT_ID,
                 initial_settings.discord.clone(),
@@ -142,6 +146,7 @@ pub fn run() {
             app.manage(SettingsRuntime {
                 store: Arc::clone(&settings_store),
                 presence: Arc::clone(&presence),
+                updater: Arc::clone(&update_controller),
             });
             let presence_on_title = Arc::clone(&presence);
             let presence_on_cover = Arc::clone(&presence);
@@ -159,6 +164,7 @@ pub fn run() {
             let cover_cache_on_lookup = Arc::clone(&cover_cache);
             let presence_on_lookup = Arc::clone(&presence);
             let navigation_context = page_context.clone();
+            let update_on_page_load = Arc::clone(&update_controller);
             let initialization_script = blocker.initialization_script();
             let cover_handler: CoverHandler = Arc::new(move |page_url, cover_url| {
                 let Ok(page_url) = tauri::Url::parse(&page_url) else {
@@ -215,6 +221,11 @@ pub fn run() {
                     eprintln!("Could not dispatch the settings window: {error}");
                 }
             });
+            let update_app = app.handle().clone();
+            let update_on_install = Arc::clone(&update_controller);
+            let update_handler: UpdateHandler = Arc::new(move || {
+                updater::install_requested(update_app.clone(), Arc::clone(&update_on_install));
+            });
             let window_app = app.handle().clone();
             let window_handler: WindowHandler = Arc::new(move |action| {
                 let app = window_app.clone();
@@ -263,6 +274,9 @@ pub fn run() {
             .data_directory(data_directory.clone())
             .general_autofill_enabled(true)
             .initialization_script_for_all_frames(initialization_script)
+            .on_page_load(move |window, _payload| {
+                update_on_page_load.publish_to_window(&window);
+            })
             .on_navigation(move |url| {
                 if matches!(url.scheme(), "http" | "https") {
                     navigation_context.update(url.as_str());
@@ -338,14 +352,17 @@ pub fn run() {
                 &window,
                 blocker,
                 page_context,
-                cover_handler,
-                playback_handler,
-                settings_handler,
-                window_handler,
+                NetworkHandlers::new(
+                    cover_handler,
+                    playback_handler,
+                    settings_handler,
+                    update_handler,
+                    window_handler,
+                ),
             )?;
             window.navigate(url)?;
             if initial_settings.check_updates_on_start {
-                updater::check_on_start(app.handle().clone());
+                updater::check_on_start(app.handle().clone(), Arc::clone(&update_controller));
             }
 
             Ok(())

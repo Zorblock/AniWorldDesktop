@@ -397,7 +397,11 @@ checkUpdatesButton.addEventListener("click", () => {
     .then((result) => {
       currentVersion.textContent = `Current version ${result.currentVersion}`;
       if (result.availableVersion) {
-        setStatus(updateStatus, `Version ${result.availableVersion} is available`, "success");
+        setStatus(
+          updateStatus,
+          `Version ${result.availableVersion} is available in the titlebar`,
+          "success",
+        );
       } else {
         setStatus(updateStatus, "You are up to date", "success");
       }
