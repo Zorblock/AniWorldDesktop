@@ -1,6 +1,7 @@
 use tauri::WebviewWindow;
 
 const STORAGE_KEY: &str = "aniworld-desktop-nyan-scrollbar";
+const BACKGROUND_BASE64: &str = include_str!("../assets/nyan-scroll/background.png.base64");
 const NYAN_HORIZONTAL: &str = include_str!("../assets/nyan-scroll/nyan-hor.svg");
 const NYAN_VERTICAL: &str = include_str!("../assets/nyan-scroll/nyan-vert.svg");
 const RAINBOW_HORIZONTAL: &str = include_str!("../assets/nyan-scroll/rainbow-hor.svg");
@@ -23,6 +24,8 @@ fn svg_data_url(svg: &str) -> String {
 }
 
 pub fn stylesheet() -> String {
+    let background_base64 = BACKGROUND_BASE64.split_whitespace().collect::<String>();
+    let background = format!("data:image/png;base64,{background_base64}");
     let nyan_horizontal = svg_data_url(NYAN_HORIZONTAL);
     let nyan_vertical = svg_data_url(NYAN_VERTICAL);
     let rainbow_horizontal = svg_data_url(RAINBOW_HORIZONTAL);
@@ -42,8 +45,8 @@ html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-t
   height: 16px !important;
   border: 0 !important;
   background-color: #003366 !important;
-  background-image: radial-gradient(circle, #ffffff 0 1px, transparent 1.5px) !important;
-  background-size: 17px 17px !important;
+  background-image: url("{background}") !important;
+  background-size: auto 60px !important;
 }}
 html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-track-piece:vertical:start {{
   background-color: #003366 !important;
@@ -156,9 +159,11 @@ mod tests {
     fn embeds_local_nyan_assets_in_the_stylesheet() {
         let css = stylesheet();
         assert!(css.contains("data:image/svg+xml,"));
+        assert!(css.contains("data:image/png;base64,"));
         assert!(css.contains("aniworld-nyan-scrollbar"));
         assert!(css.contains("scrollbar-color: auto !important"));
         assert!(css.contains("scrollbar-width: auto !important"));
+        assert!(!css.contains("radial-gradient"));
         assert!(!css.contains("chrome-extension://"));
     }
 
