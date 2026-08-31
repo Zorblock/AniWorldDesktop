@@ -215,16 +215,25 @@ pub fn initialization_script() -> String {
         position: fixed !important;
         inset: 46px 0 0 !important;
         z-index: 2147483646 !important;
-        display: none !important;
+        display: grid !important;
         place-items: center !important;
         margin: 0 !important;
         padding: 24px !important;
         border: 0 !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
         background: rgba(5, 8, 13, 0.72) !important;
         box-sizing: border-box !important;
+        pointer-events: none !important;
+        transition:
+          opacity 160ms ease,
+          visibility 0s linear 160ms !important;
       }}
       [data-aniworld-settings-overlay][data-open="true"] {{
-        display: grid !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+        transition-delay: 0s !important;
       }}
       [data-aniworld-settings-backdrop] {{
         position: absolute !important;
@@ -249,6 +258,14 @@ pub fn initialization_script() -> String {
         border-radius: 6px !important;
         background: #11151d !important;
         box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5) !important;
+        opacity: 0 !important;
+        transform: translateY(8px) scale(0.99) !important;
+        transition: opacity 160ms ease, transform 180ms ease !important;
+      }}
+      [data-aniworld-settings-overlay][data-open="true"]
+        [data-aniworld-settings-dialog] {{
+        opacity: 1 !important;
+        transform: translateY(0) scale(1) !important;
       }}
       [data-aniworld-settings-frame] {{
         display: block !important;
@@ -258,6 +275,12 @@ pub fn initialization_script() -> String {
         padding: 0 !important;
         border: 0 !important;
         background: #11151d !important;
+      }}
+      @media (prefers-reduced-motion: reduce) {{
+        [data-aniworld-settings-overlay],
+        [data-aniworld-settings-dialog] {{
+          transition: none !important;
+        }}
       }}
       [data-aniworld-update-control]:hover [data-aniworld-update-tooltip],
       [data-aniworld-update-control]:focus-within [data-aniworld-update-tooltip] {{
