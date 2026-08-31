@@ -1,15 +1,17 @@
 mod adblock;
 mod anime_api;
 mod browser_data;
+mod player;
 mod presence;
 mod process_shutdown;
 mod settings;
+mod titlebar;
 mod updater;
+mod webview_bridge;
+mod webview_injection;
+mod webview_network;
 
-use adblock::{
-    AdBlocker, CoverHandler, NetworkHandlers, PageContext, PlaybackHandler, SettingsHandler,
-    UpdateHandler, WindowAction, WindowHandler,
-};
+use adblock::AdBlocker;
 use presence::{Activity, DiscordPresence};
 use serde::Serialize;
 use settings::{AppSettings, SettingsStore};
@@ -20,6 +22,10 @@ use std::{
     thread,
 };
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use webview_bridge::{
+    CoverHandler, NetworkHandlers, PageContext, PlaybackHandler, SettingsHandler, UpdateHandler,
+    WindowAction, WindowHandler,
+};
 
 const ANIWORLD_URL: &str = "https://aniworld.to";
 const DISCORD_CLIENT_ID: &str = "1542562842379554826";
@@ -248,7 +254,8 @@ pub fn run() {
             let presence_on_lookup = Arc::clone(&presence);
             let navigation_context = page_context.clone();
             let update_on_page_load = Arc::clone(&update_controller);
-            let mut initialization_script = blocker.initialization_script();
+            let mut initialization_script =
+                webview_injection::initialization_script(&blocker.cosmetic_css());
             if let Some(language_script) = initial_settings
                 .browser_language
                 .navigator_override_script()
@@ -440,7 +447,7 @@ pub fn run() {
 
             create_settings_window(app.handle(), &data_directory, &initial_settings)?;
 
-            adblock::install_network_filter(
+            webview_network::install_network_filter(
                 &window,
                 blocker,
                 page_context,
