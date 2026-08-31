@@ -489,12 +489,9 @@ nyanCatScrollbar.addEventListener("change", () => {
     });
 });
 
-settingsForm.addEventListener("input", (event) => {
+settingsForm.addEventListener("input", () => {
   setDiscordAvailability();
   updatePreview();
-  if (event.target === nyanCatScrollbar) {
-    return;
-  }
   setDirty();
 });
 

@@ -8,8 +8,6 @@
    height="32"
    viewBox="0 0 20 32">
 
-  <rect x="0" y="8" width="20" height="24" fill="#003366"/>
-
   <g transform="rotate(90,10,10)">
     <g transform="translate(4,-1032.3622)">
       <path

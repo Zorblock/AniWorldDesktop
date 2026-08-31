@@ -46,14 +46,19 @@ html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-t
   border: 0 !important;
   background-color: #003366 !important;
   background-image: url("{background}") !important;
+  background-position: top right !important;
+  background-repeat: repeat !important;
   background-size: auto 60px !important;
 }}
 html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-track-piece:vertical:start {{
   background-color: #003366 !important;
-  background-image: url("{rainbow_vertical}") !important;
+  background-image: url("{rainbow_vertical}"), url("{background}") !important;
+  background-position: bottom right, top right !important;
+  background-repeat: repeat-y, repeat !important;
+  background-size: 100% 14px, auto 60px !important;
+}}
+html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-track-piece:vertical:end {{
   background-position: bottom right !important;
-  background-repeat: repeat-y !important;
-  background-size: 100% 14px !important;
 }}
 html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-thumb:vertical {{
   min-height: 32px !important;
@@ -67,10 +72,13 @@ html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-t
 }}
 html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-track-piece:horizontal:start {{
   background-color: #003366 !important;
-  background-image: url("{rainbow_horizontal}") !important;
-  background-position: bottom right !important;
-  background-repeat: repeat-x !important;
-  background-size: 14px 100% !important;
+  background-image: url("{rainbow_horizontal}"), url("{background}") !important;
+  background-position: bottom right, top left !important;
+  background-repeat: repeat-x, repeat !important;
+  background-size: 14px 100%, auto 60px !important;
+}}
+html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-track-piece:horizontal:end {{
+  background-position: top right !important;
 }}
 html.aniworld-nyan-scrollbar.aniworld-desktop-framed > body::-webkit-scrollbar-thumb:horizontal {{
   min-width: 32px !important;
@@ -165,6 +173,10 @@ mod tests {
         assert!(css.contains("scrollbar-width: auto !important"));
         assert!(!css.contains("radial-gradient"));
         assert!(!css.contains("chrome-extension://"));
+        assert!(!NYAN_HORIZONTAL.contains("#003366"));
+        assert!(!NYAN_VERTICAL.contains("#003366"));
+        assert!(!RAINBOW_HORIZONTAL.contains("background: #003366"));
+        assert!(!RAINBOW_VERTICAL.contains("background: #003366"));
     }
 
     #[test]

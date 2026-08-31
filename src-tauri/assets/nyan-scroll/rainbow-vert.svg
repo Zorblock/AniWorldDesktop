@@ -3,8 +3,7 @@
 	xmlns:svg="http://www.w3.org/2000/svg"
 	xmlns="http://www.w3.org/2000/svg"
 	viewBox="0 0 22 20"
-	preserveAspectRatio="none"
-        style="background: #003366;">
+	preserveAspectRatio="none">
 	
 	<rect x="18.5" y="0" width="3.5" height="10" fill="#ff0000"/>
 	<rect x="15"   y="0" width="3.5" height="10" fill="#ff9900"/>
