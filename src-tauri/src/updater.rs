@@ -1,5 +1,9 @@
 use crate::process_shutdown;
-use std::time::Duration;
+use serde::Serialize;
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 use tauri::AppHandle;
 #[cfg(target_os = "windows")]
 use tauri::Manager;
@@ -13,6 +17,35 @@ use std::sync::mpsc::{self, Sender};
 
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(15);
 const INSTALL_STATUS_DELAY: Duration = Duration::from_millis(600);
+static UPDATE_CHECK_RUNNING: AtomicBool = AtomicBool::new(false);
+
+struct UpdateCheckGuard;
+
+impl UpdateCheckGuard {
+    fn acquire() -> tauri_plugin_updater::Result<Self> {
+        UPDATE_CHECK_RUNNING
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| Self)
+            .map_err(|_| {
+                tauri_plugin_updater::Error::from(std::io::Error::other(
+                    "An update check is already running",
+                ))
+            })
+    }
+}
+
+impl Drop for UpdateCheckGuard {
+    fn drop(&mut self) {
+        UPDATE_CHECK_RUNNING.store(false, Ordering::Release);
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCheckResult {
+    pub current_version: String,
+    pub available_version: Option<String>,
+}
 
 #[cfg(target_os = "windows")]
 enum ProgressCommand {
@@ -46,13 +79,28 @@ pub fn check_on_start(app: AppHandle) {
     });
 }
 
-async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
+pub async fn check_manually(app: AppHandle) -> Result<UpdateCheckResult, String> {
+    check_for_update(app)
+        .await
+        .map_err(|error| format!("Update check failed: {error}"))
+}
+
+async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<UpdateCheckResult> {
+    let _check_guard = UpdateCheckGuard::acquire()?;
+    let current_version = env!("CARGO_PKG_VERSION").to_owned();
     let updater = app.updater_builder().timeout(UPDATE_TIMEOUT).build()?;
     let Some(update) = updater.check().await? else {
-        return Ok(());
+        return Ok(UpdateCheckResult {
+            current_version,
+            available_version: None,
+        });
     };
 
     let version = update.version.clone();
+    let result = UpdateCheckResult {
+        current_version,
+        available_version: Some(version.clone()),
+    };
     let accepted = app
         .dialog()
         .message(format!(
@@ -64,7 +112,7 @@ async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
         .blocking_show();
 
     if !accepted {
-        return Ok(());
+        return Ok(result);
     }
 
     let _update_lock = match process_shutdown::acquire_update_lock() {
@@ -75,7 +123,7 @@ async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
                 .title("Update Already Running")
                 .kind(MessageDialogKind::Info)
                 .show(|_| {});
-            return Ok(());
+            return Ok(result);
         }
         Err(message) => {
             app.dialog()
@@ -164,7 +212,7 @@ async fn check_for_update(app: AppHandle) -> tauri_plugin_updater::Result<()> {
     #[cfg(not(target_os = "windows"))]
     app.restart();
 
-    Ok(())
+    Ok(result)
 }
 
 #[cfg(not(target_os = "windows"))]

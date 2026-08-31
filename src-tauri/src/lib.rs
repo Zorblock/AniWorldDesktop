@@ -2,6 +2,7 @@ mod adblock;
 mod anime_api;
 mod presence;
 mod process_shutdown;
+mod settings;
 mod updater;
 
 use adblock::{
@@ -9,6 +10,8 @@ use adblock::{
     WindowHandler,
 };
 use presence::{Activity, DiscordPresence};
+use serde::Serialize;
+use settings::{AppSettings, SettingsStore};
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
@@ -20,6 +23,48 @@ use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 const ANIWORLD_URL: &str = "https://aniworld.to";
 const DISCORD_CLIENT_ID: &str = "1542562842379554826";
 const APP_TITLE: &str = concat!("AniWorld Desktop v", env!("CARGO_PKG_VERSION"));
+
+struct SettingsRuntime {
+    store: Arc<SettingsStore>,
+    presence: Arc<DiscordPresence>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsBootstrap {
+    settings: AppSettings,
+    app_version: String,
+}
+
+#[tauri::command]
+fn load_settings(state: tauri::State<'_, SettingsRuntime>) -> SettingsBootstrap {
+    SettingsBootstrap {
+        settings: state.store.get(),
+        app_version: env!("CARGO_PKG_VERSION").to_owned(),
+    }
+}
+
+#[tauri::command]
+fn save_settings(
+    settings: AppSettings,
+    state: tauri::State<'_, SettingsRuntime>,
+) -> Result<AppSettings, String> {
+    let settings = state.store.save(settings)?;
+    state.presence.update_settings(settings.discord.clone());
+    Ok(settings)
+}
+
+#[tauri::command]
+fn reset_settings(state: tauri::State<'_, SettingsRuntime>) -> Result<AppSettings, String> {
+    let settings = state.store.reset()?;
+    state.presence.update_settings(settings.discord.clone());
+    Ok(settings)
+}
+
+#[tauri::command]
+async fn check_for_updates(app: tauri::AppHandle) -> Result<updater::UpdateCheckResult, String> {
+    updater::check_manually(app).await
+}
 
 fn show_settings_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("settings") {
@@ -35,8 +80,8 @@ fn create_settings_window(app: &tauri::AppHandle, data_directory: &Path) -> taur
     let settings_window =
         WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
             .title("Settings")
-            .inner_size(520.0, 420.0)
-            .min_inner_size(420.0, 320.0)
+            .inner_size(700.0, 700.0)
+            .min_inner_size(560.0, 560.0)
             .resizable(true)
             .maximizable(false)
             .decorations(false)
@@ -76,13 +121,28 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            load_settings,
+            save_settings,
+            reset_settings,
+            check_for_updates
+        ])
         .setup(move |app| {
             let url = ANIWORLD_URL.parse()?;
             let data_directory = user_data_directory(app.path().app_data_dir()?.as_path());
             std::fs::create_dir_all(&data_directory)?;
             let blocker = AdBlocker::load(&data_directory);
             let page_context = PageContext::new(ANIWORLD_URL);
-            let presence = Arc::new(DiscordPresence::start(DISCORD_CLIENT_ID));
+            let settings_store = Arc::new(SettingsStore::load(&data_directory));
+            let initial_settings = settings_store.get();
+            let presence = Arc::new(DiscordPresence::start(
+                DISCORD_CLIENT_ID,
+                initial_settings.discord.clone(),
+            ));
+            app.manage(SettingsRuntime {
+                store: Arc::clone(&settings_store),
+                presence: Arc::clone(&presence),
+            });
             let presence_on_title = Arc::clone(&presence);
             let presence_on_cover = Arc::clone(&presence);
             let presence_on_playback = Arc::clone(&presence);
@@ -196,7 +256,7 @@ pub fn run() {
             .title(APP_TITLE)
             .inner_size(1280.0, 800.0)
             .min_inner_size(900.0, 600.0)
-            .maximized(true)
+            .maximized(initial_settings.start_maximized)
             .decorations(false)
             .shadow(true)
             .center()
@@ -284,7 +344,9 @@ pub fn run() {
                 window_handler,
             )?;
             window.navigate(url)?;
-            updater::check_on_start(app.handle().clone());
+            if initial_settings.check_updates_on_start {
+                updater::check_on_start(app.handle().clone());
+            }
 
             Ok(())
         })

@@ -1,3 +1,4 @@
+use crate::settings::DiscordSettings;
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 use std::{
     sync::mpsc::{self, Receiver, RecvTimeoutError, Sender},
@@ -31,6 +32,7 @@ struct Playback {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PresenceSnapshot {
+    name: String,
     details: String,
     state: String,
     cover_url: Option<String>,
@@ -39,7 +41,8 @@ struct PresenceSnapshot {
 
 impl PresenceSnapshot {
     fn materially_differs(&self, other: &Self) -> bool {
-        self.details != other.details
+        self.name != other.name
+            || self.details != other.details
             || self.state != other.state
             || self.cover_url != other.cover_url
             || timestamps_materially_differ(self.timestamps, other.timestamps)
@@ -199,22 +202,96 @@ impl Activity {
         self.episode_fields()
     }
 
-    fn presence_snapshot(&self) -> PresenceSnapshot {
-        if let Some((details, state)) = self.discord_fields() {
-            return PresenceSnapshot {
-                details,
-                state,
-                cover_url: self.cover_url.clone(),
-                timestamps: self.playback_timestamps(),
-            };
+    fn presence_snapshot(&self, settings: &DiscordSettings) -> Option<PresenceSnapshot> {
+        if self.discord_fields().is_some() {
+            let name = self.render_template(&settings.status_template, settings);
+            let details = self.render_template(&settings.details_template, settings);
+            let mut state = self.render_template(&settings.state_template, settings);
+            if settings.show_playback_state
+                && !settings.state_template.contains("{playback}")
+                && self.playback_label().is_some()
+            {
+                state = append_presence_part(&state, self.playback_label().unwrap_or_default());
+            }
+
+            return Some(PresenceSnapshot {
+                name: presence_text_or(name, "AniWorld"),
+                details: presence_text_or(details, "Watching anime"),
+                state: presence_text_or(state, "Watching on AniWorld"),
+                cover_url: settings
+                    .show_cover
+                    .then(|| self.cover_url.clone())
+                    .flatten(),
+                timestamps: settings
+                    .show_progress
+                    .then(|| self.playback_timestamps())
+                    .flatten(),
+            });
         }
 
-        PresenceSnapshot {
-            details: "Browsing AniWorld".to_owned(),
-            state: "Looking for something to watch".to_owned(),
+        settings.show_browsing_activity.then(|| PresenceSnapshot {
+            name: "AniWorld".to_owned(),
+            details: presence_text_or(settings.browsing_details.clone(), "Browsing AniWorld"),
+            state: presence_text_or(
+                settings.browsing_state.clone(),
+                "Looking for something to watch",
+            ),
             cover_url: None,
             timestamps: None,
+        })
+    }
+
+    fn render_template(&self, template: &str, settings: &DiscordSettings) -> String {
+        let mut template = template.to_owned();
+        if !settings.show_season {
+            template = template
+                .replace("Season {season}", "")
+                .replace("S{season}", "");
         }
+        if !settings.show_episode {
+            template = template
+                .replace("Episode {episode}", "")
+                .replace("E{episode}", "");
+        }
+
+        let anime = if settings.show_anime_title {
+            self.title.as_deref().unwrap_or("AniWorld")
+        } else {
+            "AniWorld"
+        };
+        let season = if settings.show_season {
+            self.season.as_deref().unwrap_or("")
+        } else {
+            ""
+        };
+        let episode = if settings.show_episode {
+            self.episode.as_deref().unwrap_or("")
+        } else {
+            ""
+        };
+        let playback = settings
+            .show_playback_state
+            .then(|| self.playback_label())
+            .flatten()
+            .unwrap_or("");
+
+        normalize_presence_text(
+            &template
+                .replace("{anime}", anime)
+                .replace("{season}", season)
+                .replace("{episode}", episode)
+                .replace("{playback}", playback),
+        )
+    }
+
+    fn playback_label(&self) -> Option<&'static str> {
+        self.playback.as_ref().map(|playback| {
+            if playback.playing {
+                "Playing"
+            } else {
+                "Paused"
+            }
+        })
     }
 
     fn episode_fields(&self) -> Option<(String, String)> {
@@ -223,6 +300,42 @@ impl Activity {
         let episode = self.episode.as_deref()?;
 
         Some((title, format!("Season {season} • Episode {episode}")))
+    }
+}
+
+fn append_presence_part(value: &str, part: &str) -> String {
+    if value.is_empty() {
+        part.to_owned()
+    } else if part.is_empty() {
+        value.to_owned()
+    } else {
+        format!("{value} • {part}")
+    }
+}
+
+fn normalize_presence_text(value: &str) -> String {
+    let mut value = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    for (duplicate, separator) in [("• •", "•"), ("| |", "|"), ("— —", "—"), ("- -", "-")]
+    {
+        while value.contains(duplicate) {
+            value = value.replace(duplicate, separator);
+        }
+    }
+    value
+        .trim_matches(|character: char| {
+            character.is_whitespace() || matches!(character, '•' | '|' | '—' | '-' | ':' | ',')
+        })
+        .chars()
+        .take(128)
+        .collect()
+}
+
+fn presence_text_or(value: String, fallback: &str) -> String {
+    let value = normalize_presence_text(&value);
+    if value.chars().count() >= 2 {
+        value
+    } else {
+        fallback.to_owned()
     }
 }
 
@@ -254,39 +367,55 @@ fn clean_document_title(title: Option<&str>) -> Option<String> {
 }
 
 pub struct DiscordPresence {
-    sender: Sender<Activity>,
+    sender: Sender<PresenceCommand>,
 }
 
 impl DiscordPresence {
-    pub fn start(client_id: &str) -> Self {
+    pub fn start(client_id: &str, settings: DiscordSettings) -> Self {
         let client_id = client_id.to_owned();
         let (sender, receiver) = mpsc::channel();
         thread::Builder::new()
             .name("discord-rpc".to_owned())
-            .spawn(move || rpc_worker(&client_id, receiver))
+            .spawn(move || rpc_worker(&client_id, receiver, settings))
             .expect("Discord RPC thread could not be started");
-        let _ = sender.send(Activity::idle());
+        let _ = sender.send(PresenceCommand::Activity(Activity::idle()));
 
         Self { sender }
     }
 
     pub fn update(&self, activity: Activity) {
-        let _ = self.sender.send(activity);
+        let _ = self.sender.send(PresenceCommand::Activity(activity));
+    }
+
+    pub fn update_settings(&self, settings: DiscordSettings) {
+        let _ = self.sender.send(PresenceCommand::Settings(settings));
     }
 }
 
-fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
+enum PresenceCommand {
+    Activity(Activity),
+    Settings(DiscordSettings),
+}
+
+fn rpc_worker(client_id: &str, receiver: Receiver<PresenceCommand>, mut settings: DiscordSettings) {
     let mut client = DiscordIpcClient::new(client_id);
     let mut connected = false;
     let mut current = Activity::idle();
     let mut published: Option<PresenceSnapshot> = None;
+    let mut activity_cleared = false;
     let mut last_write: Option<Instant> = None;
 
     loop {
-        let desired = current.presence_snapshot();
-        let pending_update = published
-            .as_ref()
-            .is_none_or(|previous| desired.materially_differs(previous));
+        let desired = settings
+            .enabled
+            .then(|| current.presence_snapshot(&settings))
+            .flatten();
+        let pending_update = desired.as_ref().is_some_and(|desired| {
+            activity_cleared
+                || published
+                    .as_ref()
+                    .is_none_or(|previous| desired.materially_differs(previous))
+        });
         let wait_time = if connected && pending_update {
             last_write
                 .map(|last| PRESENCE_UPDATE_INTERVAL.saturating_sub(last.elapsed()))
@@ -296,10 +425,14 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
         };
 
         match receiver.recv_timeout(wait_time) {
-            Ok(activity) => {
-                current = activity;
-                for queued in receiver.try_iter() {
-                    current = queued;
+            Ok(command) => {
+                let mut settings_changed = apply_command(command, &mut current, &mut settings);
+                for command in receiver.try_iter() {
+                    settings_changed |= apply_command(command, &mut current, &mut settings);
+                }
+                if settings_changed {
+                    published = None;
+                    last_write = None;
                 }
             }
             Err(RecvTimeoutError::Disconnected) => {
@@ -312,7 +445,30 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
             Err(RecvTimeoutError::Timeout) => {}
         }
 
-        let desired = current.presence_snapshot();
+        if !settings.enabled {
+            if connected {
+                let _ = client.clear_activity();
+                let _ = client.close();
+            }
+            connected = false;
+            published = None;
+            activity_cleared = true;
+            last_write = None;
+            continue;
+        }
+
+        let Some(desired) = current.presence_snapshot(&settings) else {
+            if connected && !activity_cleared {
+                if client.clear_activity().is_err() {
+                    connected = false;
+                    let _ = client.close();
+                } else {
+                    published = None;
+                    activity_cleared = true;
+                }
+            }
+            continue;
+        };
 
         if !connected {
             connected = client.connect().is_ok();
@@ -320,6 +476,7 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
                 continue;
             }
             published = None;
+            activity_cleared = false;
             last_write = None;
         }
 
@@ -335,9 +492,11 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
         }
 
         let mut payload = activity::Activity::new()
+            .name(&desired.name)
             .details(&desired.details)
             .state(&desired.state)
-            .activity_type(activity::ActivityType::Watching);
+            .activity_type(activity::ActivityType::Watching)
+            .status_display_type(activity::StatusDisplayType::Name);
         if let Some((start, end)) = desired.timestamps {
             payload = payload.timestamps(activity::Timestamps::new().start(start).end(end));
         }
@@ -354,7 +513,25 @@ fn rpc_worker(client_id: &str, receiver: Receiver<Activity>) {
             let _ = client.close();
         } else {
             published = Some(desired);
+            activity_cleared = false;
             last_write = Some(Instant::now());
+        }
+    }
+}
+
+fn apply_command(
+    command: PresenceCommand,
+    current: &mut Activity,
+    settings: &mut DiscordSettings,
+) -> bool {
+    match command {
+        PresenceCommand::Activity(activity) => {
+            *current = activity;
+            false
+        }
+        PresenceCommand::Settings(updated) => {
+            *settings = updated;
+            true
         }
     }
 }
@@ -475,8 +652,9 @@ mod tests {
         assert!(first.set_playback_at(true, 30_000, 120_000, 1_000, 1_000_000));
         assert!(later.set_playback_at(true, 40_000, 120_000, 1_000, 1_010_000));
 
-        let first = first.presence_snapshot();
-        let later = later.presence_snapshot();
+        let settings = DiscordSettings::default();
+        let first = first.presence_snapshot(&settings).unwrap();
+        let later = later.presence_snapshot(&settings).unwrap();
         assert!(!later.materially_differs(&first));
     }
 
@@ -493,8 +671,9 @@ mod tests {
         assert!(first.set_playback_at(true, 30_000, 120_000, 1_000, 1_000_000));
         assert!(seeked.set_playback_at(true, 70_000, 120_000, 1_000, 1_010_000));
 
-        let first = first.presence_snapshot();
-        let seeked = seeked.presence_snapshot();
+        let settings = DiscordSettings::default();
+        let first = first.presence_snapshot(&settings).unwrap();
+        let seeked = seeked.presence_snapshot(&settings).unwrap();
         assert!(seeked.materially_differs(&first));
     }
 
@@ -508,7 +687,9 @@ mod tests {
         );
 
         assert!(parsed.set_playback_at(false, 30_000, 120_000, 1_000, 1_000_000));
-        let presence = parsed.presence_snapshot();
+        let presence = parsed
+            .presence_snapshot(&DiscordSettings::default())
+            .unwrap();
 
         assert_eq!(presence.details, "Demon Slayer");
         assert_eq!(presence.state, "Season 2 • Episode 7");
@@ -532,5 +713,68 @@ mod tests {
             .as_ref()
             .is_some_and(|playback| playback.playing));
         assert!(parsed.playback_timestamps().is_some());
+    }
+
+    #[test]
+    fn can_put_the_anime_title_in_the_discord_status() {
+        let url = Url::parse("https://aniworld.to/anime/stream/demon-slayer/staffel-2/episode-7")
+            .unwrap();
+        let parsed = Activity::from_url(
+            &url,
+            Some("Episode 7 Staffel 2 von Demon Slayer | AniWorld.to"),
+        );
+        let settings = DiscordSettings {
+            status_template: "{anime}".to_owned(),
+            ..DiscordSettings::default()
+        };
+
+        let presence = parsed.presence_snapshot(&settings).unwrap();
+
+        assert_eq!(presence.name, "Demon Slayer");
+        assert_eq!(presence.details, "Demon Slayer");
+    }
+
+    #[test]
+    fn privacy_controls_remove_episode_metadata_and_assets() {
+        let url = Url::parse("https://aniworld.to/anime/stream/demon-slayer/staffel-2/episode-7")
+            .unwrap();
+        let mut parsed = Activity::from_url(
+            &url,
+            Some("Episode 7 Staffel 2 von Demon Slayer | AniWorld.to"),
+        );
+        parsed.set_cover_url(
+            "https://s4.anilist.co/file/anilistcdn/media/anime/cover.jpg".to_owned(),
+        );
+        assert!(parsed.set_playback_at(true, 30_000, 120_000, 1_000, 1_000_000));
+        let settings = DiscordSettings {
+            show_anime_title: false,
+            show_season: false,
+            show_episode: false,
+            show_cover: false,
+            show_progress: false,
+            status_template: "{anime}".to_owned(),
+            details_template: "Watching anime".to_owned(),
+            state_template: "Season {season} • Episode {episode}".to_owned(),
+            ..DiscordSettings::default()
+        };
+
+        let presence = parsed.presence_snapshot(&settings).unwrap();
+
+        assert_eq!(presence.name, "AniWorld");
+        assert!(!presence.details.contains("Demon Slayer"));
+        assert!(!presence.state.contains('2'));
+        assert!(!presence.state.contains('7'));
+        assert_eq!(presence.cover_url, None);
+        assert_eq!(presence.timestamps, None);
+    }
+
+    #[test]
+    fn browsing_presence_can_be_disabled() {
+        let settings = DiscordSettings {
+            show_browsing_activity: false,
+            ..DiscordSettings::default()
+        };
+
+        assert_eq!(Activity::idle().presence_snapshot(&settings), None);
     }
 }

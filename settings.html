@@ -23,8 +23,133 @@
     <main class="settings-shell">
       <header class="settings-header">
         <h1>Settings</h1>
-        <p>Application preferences will appear here.</p>
+        <p>Changes to Discord Rich Presence apply immediately after saving.</p>
       </header>
+
+      <form id="settings-form">
+        <section class="settings-section" aria-labelledby="general-heading">
+          <div class="section-heading">
+            <h2 id="general-heading">General</h2>
+          </div>
+          <label class="setting-row" for="start-maximized">
+            <span>
+              <strong>Start maximized</strong>
+              <small>Open the main window at the available screen size.</small>
+            </span>
+            <input id="start-maximized" type="checkbox" />
+          </label>
+        </section>
+
+        <section class="settings-section" aria-labelledby="discord-heading">
+          <div class="section-heading">
+            <h2 id="discord-heading">Discord Rich Presence</h2>
+            <p>Control what Discord receives while you browse and watch.</p>
+          </div>
+
+          <label class="setting-row setting-row--primary" for="discord-enabled">
+            <span>
+              <strong>Enable Discord Rich Presence</strong>
+              <small>Turning this off clears the activity and disconnects from Discord.</small>
+            </span>
+            <input id="discord-enabled" type="checkbox" />
+          </label>
+
+          <fieldset id="discord-options">
+            <div class="field">
+              <label for="presence-preset">Display preset</label>
+              <select id="presence-preset">
+                <option value="standard">Standard</option>
+                <option value="anime-status">Anime title in Discord status</option>
+                <option value="compact">Compact</option>
+                <option value="private">Private</option>
+                <option value="custom">Custom</option>
+              </select>
+              <small>Presets fill the three text fields below. You can edit them afterward.</small>
+            </div>
+
+            <div class="template-grid">
+              <div class="field">
+                <label for="status-template">Status after “Watching”</label>
+                <input id="status-template" type="text" maxlength="120" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="details-template">First detail line</label>
+                <input id="details-template" type="text" maxlength="120" autocomplete="off" />
+              </div>
+              <div class="field">
+                <label for="state-template">Second detail line</label>
+                <input id="state-template" type="text" maxlength="120" autocomplete="off" />
+              </div>
+            </div>
+            <p class="template-help">
+              Available placeholders: <code>{anime}</code>, <code>{season}</code>,
+              <code>{episode}</code>, <code>{playback}</code>
+            </p>
+
+            <div class="preview" aria-live="polite">
+              <span class="preview__label">Preview</span>
+              <strong id="preview-status"></strong>
+              <span id="preview-details"></span>
+              <span id="preview-state"></span>
+              <small id="preview-meta"></small>
+            </div>
+
+            <h3>Visible information</h3>
+            <div class="checkbox-grid">
+              <label><input id="show-anime-title" type="checkbox" /> Anime title</label>
+              <label><input id="show-season" type="checkbox" /> Season</label>
+              <label><input id="show-episode" type="checkbox" /> Episode</label>
+              <label><input id="show-cover" type="checkbox" /> Anime cover</label>
+              <label><input id="show-progress" type="checkbox" /> Playback progress</label>
+              <label><input id="show-playback-state" type="checkbox" /> Playing or paused state</label>
+            </div>
+
+            <div class="subsection">
+              <label class="setting-row" for="show-browsing-activity">
+                <span>
+                  <strong>Show activity while browsing</strong>
+                  <small>Keep a generic presence when no episode is open.</small>
+                </span>
+                <input id="show-browsing-activity" type="checkbox" />
+              </label>
+              <div class="template-grid template-grid--two">
+                <div class="field">
+                  <label for="browsing-details">Browsing detail</label>
+                  <input id="browsing-details" type="text" maxlength="120" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="browsing-state">Browsing state</label>
+                  <input id="browsing-state" type="text" maxlength="120" autocomplete="off" />
+                </div>
+              </div>
+            </div>
+          </fieldset>
+        </section>
+
+        <section class="settings-section" aria-labelledby="updates-heading">
+          <div class="section-heading">
+            <h2 id="updates-heading">Updates</h2>
+            <p id="current-version">Current version</p>
+          </div>
+          <label class="setting-row" for="check-updates-on-start">
+            <span>
+              <strong>Check automatically on startup</strong>
+              <small>Only a newer signed release will be offered for installation.</small>
+            </span>
+            <input id="check-updates-on-start" type="checkbox" />
+          </label>
+          <div class="update-row">
+            <button id="check-updates" type="button" class="button button--secondary">Check for updates</button>
+            <span id="update-status" class="status-text" role="status"></span>
+          </div>
+        </section>
+
+        <footer class="form-actions">
+          <span id="save-status" class="status-text" role="status"></span>
+          <button id="reset-settings" type="button" class="button button--secondary">Reset to defaults</button>
+          <button id="save-settings" type="submit" class="button button--primary">Save changes</button>
+        </footer>
+      </form>
     </main>
   </body>
 </html>
