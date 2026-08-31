@@ -478,7 +478,14 @@ pub fn initialization_script() -> String {
   if (document.body) {{
     installTitlebar();
   }} else {{
-    document.addEventListener("DOMContentLoaded", installTitlebar, {{ once: true }});
+    const titlebarObserver = new MutationObserver(() => {{
+      if (!document.body) {{
+        return;
+      }}
+      titlebarObserver.disconnect();
+      installTitlebar();
+    }});
+    titlebarObserver.observe(document, {{ childList: true, subtree: true }});
   }}
 "#,
         app_version = env!("CARGO_PKG_VERSION"),
