@@ -1,5 +1,6 @@
 mod adblock;
 mod anime_api;
+mod browser_data;
 mod presence;
 mod process_shutdown;
 mod settings;
@@ -28,6 +29,7 @@ struct SettingsRuntime {
     store: Arc<SettingsStore>,
     presence: Arc<DiscordPresence>,
     updater: Arc<updater::UpdateController>,
+    data_directory: PathBuf,
 }
 
 #[derive(Serialize)]
@@ -35,6 +37,13 @@ struct SettingsRuntime {
 struct SettingsBootstrap {
     settings: AppSettings,
     app_version: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SettingsSaveResult {
+    settings: AppSettings,
+    restart_required: bool,
 }
 
 #[tauri::command]
@@ -49,17 +58,77 @@ fn load_settings(state: tauri::State<'_, SettingsRuntime>) -> SettingsBootstrap 
 fn save_settings(
     settings: AppSettings,
     state: tauri::State<'_, SettingsRuntime>,
-) -> Result<AppSettings, String> {
+) -> Result<SettingsSaveResult, String> {
+    let previous_language = state.store.get().browser_language;
     let settings = state.store.save(settings)?;
     state.presence.update_settings(settings.discord.clone());
-    Ok(settings)
+    Ok(SettingsSaveResult {
+        restart_required: settings.browser_language != previous_language,
+        settings,
+    })
 }
 
 #[tauri::command]
-fn reset_settings(state: tauri::State<'_, SettingsRuntime>) -> Result<AppSettings, String> {
+fn reset_settings(state: tauri::State<'_, SettingsRuntime>) -> Result<SettingsSaveResult, String> {
+    let previous_language = state.store.get().browser_language;
     let settings = state.store.reset()?;
     state.presence.update_settings(settings.discord.clone());
-    Ok(settings)
+    Ok(SettingsSaveResult {
+        restart_required: settings.browser_language != previous_language,
+        settings,
+    })
+}
+
+#[tauri::command]
+async fn browser_storage_info(
+    state: tauri::State<'_, SettingsRuntime>,
+) -> Result<browser_data::StorageInfo, String> {
+    let data_directory = state.data_directory.clone();
+    tauri::async_runtime::spawn_blocking(move || browser_data::storage_info(&data_directory))
+        .await
+        .map_err(|error| format!("Could not inspect browser storage: {error}"))?
+}
+
+#[tauri::command]
+async fn clear_browser_data(
+    kind: browser_data::BrowserDataKind,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SettingsRuntime>,
+) -> Result<browser_data::StorageInfo, String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "The main browser window is not available".to_owned())?;
+    let data_directory = state.data_directory.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        browser_data::clear(&window, kind)?;
+        browser_data::storage_info(&data_directory)
+    })
+    .await
+    .map_err(|error| format!("Could not finish browser data cleanup: {error}"))?
+}
+
+fn schedule_restart(app: tauri::AppHandle) {
+    let _ = thread::Builder::new()
+        .name("app-restart".to_owned())
+        .spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(350));
+            app.restart();
+        });
+}
+
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    schedule_restart(app);
+}
+
+#[tauri::command]
+fn reset_all_app_data(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SettingsRuntime>,
+) -> Result<(), String> {
+    browser_data::schedule_full_reset(&state.data_directory)?;
+    schedule_restart(app);
+    Ok(())
 }
 
 #[tauri::command]
@@ -80,8 +149,12 @@ fn show_settings_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-fn create_settings_window(app: &tauri::AppHandle, data_directory: &Path) -> tauri::Result<()> {
-    let settings_window =
+fn create_settings_window(
+    app: &tauri::AppHandle,
+    data_directory: &Path,
+    settings: &AppSettings,
+) -> tauri::Result<()> {
+    let mut builder =
         WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
             .title("Settings")
             .inner_size(700.0, 700.0)
@@ -94,8 +167,11 @@ fn create_settings_window(app: &tauri::AppHandle, data_directory: &Path) -> taur
             .data_directory(data_directory.to_owned())
             .center()
             .visible(false)
-            .skip_taskbar(true)
-            .build()?;
+            .skip_taskbar(true);
+    if let Some(arguments) = settings.browser_language.browser_arguments() {
+        builder = builder.additional_browser_args(&arguments);
+    }
+    let settings_window = builder.build()?;
 
     let window_on_close = settings_window.clone();
     settings_window.on_window_event(move |event| {
@@ -128,11 +204,17 @@ pub fn run() {
             load_settings,
             save_settings,
             reset_settings,
+            browser_storage_info,
+            clear_browser_data,
+            restart_app,
+            reset_all_app_data,
             check_for_updates
         ])
         .setup(move |app| {
             let url = ANIWORLD_URL.parse()?;
             let data_directory = user_data_directory(app.path().app_data_dir()?.as_path());
+            browser_data::perform_pending_full_reset(&data_directory)
+                .map_err(std::io::Error::other)?;
             std::fs::create_dir_all(&data_directory)?;
             let blocker = AdBlocker::load(&data_directory);
             let page_context = PageContext::new(ANIWORLD_URL);
@@ -147,6 +229,7 @@ pub fn run() {
                 store: Arc::clone(&settings_store),
                 presence: Arc::clone(&presence),
                 updater: Arc::clone(&update_controller),
+                data_directory: data_directory.clone(),
             });
             let presence_on_title = Arc::clone(&presence);
             let presence_on_cover = Arc::clone(&presence);
@@ -165,7 +248,13 @@ pub fn run() {
             let presence_on_lookup = Arc::clone(&presence);
             let navigation_context = page_context.clone();
             let update_on_page_load = Arc::clone(&update_controller);
-            let initialization_script = blocker.initialization_script();
+            let mut initialization_script = blocker.initialization_script();
+            if let Some(language_script) = initial_settings
+                .browser_language
+                .navigator_override_script()
+            {
+                initialization_script = format!("{language_script}\n{initialization_script}");
+            }
             let cover_handler: CoverHandler = Arc::new(move |page_url, cover_url| {
                 let Ok(page_url) = tauri::Url::parse(&page_url) else {
                     return;
@@ -259,7 +348,7 @@ pub fn run() {
                 }
             });
 
-            let window = WebviewWindowBuilder::new(
+            let mut window_builder = WebviewWindowBuilder::new(
                 app,
                 "main",
                 WebviewUrl::External("about:blank".parse()?),
@@ -343,10 +432,13 @@ pub fn run() {
                         }
                     }
                 }
-            })
-            .build()?;
+            });
+            if let Some(arguments) = initial_settings.browser_language.browser_arguments() {
+                window_builder = window_builder.additional_browser_args(&arguments);
+            }
+            let window = window_builder.build()?;
 
-            create_settings_window(app.handle(), &data_directory)?;
+            create_settings_window(app.handle(), &data_directory, &initial_settings)?;
 
             adblock::install_network_filter(
                 &window,

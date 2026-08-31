@@ -13,6 +13,7 @@ const MAX_TEMPLATE_LENGTH: usize = 120;
 pub struct AppSettings {
     pub start_maximized: bool,
     pub check_updates_on_start: bool,
+    pub browser_language: BrowserLanguage,
     pub discord: DiscordSettings,
 }
 
@@ -21,6 +22,7 @@ impl Default for AppSettings {
         Self {
             start_maximized: true,
             check_updates_on_start: true,
+            browser_language: BrowserLanguage::Automatic,
             discord: DiscordSettings::default(),
         }
     }
@@ -30,6 +32,64 @@ impl AppSettings {
     fn normalized(mut self) -> Self {
         self.discord.normalize();
         self
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+pub enum BrowserLanguage {
+    #[default]
+    #[serde(rename = "automatic")]
+    Automatic,
+    #[serde(rename = "de-DE")]
+    German,
+    #[serde(rename = "en-US")]
+    English,
+    #[serde(rename = "fr-FR")]
+    French,
+    #[serde(rename = "es-ES")]
+    Spanish,
+    #[serde(rename = "it-IT")]
+    Italian,
+    #[serde(rename = "pl-PL")]
+    Polish,
+    #[serde(rename = "pt-BR")]
+    Portuguese,
+    #[serde(rename = "ja-JP")]
+    Japanese,
+}
+
+impl BrowserLanguage {
+    pub fn locale(self) -> Option<&'static str> {
+        match self {
+            Self::Automatic => None,
+            Self::German => Some("de-DE"),
+            Self::English => Some("en-US"),
+            Self::French => Some("fr-FR"),
+            Self::Spanish => Some("es-ES"),
+            Self::Italian => Some("it-IT"),
+            Self::Polish => Some("pl-PL"),
+            Self::Portuguese => Some("pt-BR"),
+            Self::Japanese => Some("ja-JP"),
+        }
+    }
+
+    pub fn browser_arguments(self) -> Option<String> {
+        self.locale().map(|locale| {
+            format!(
+                "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --lang={locale}"
+            )
+        })
+    }
+
+    pub fn navigator_override_script(self) -> Option<String> {
+        let locale = self.locale()?;
+        let primary = locale.split('-').next().unwrap_or(locale);
+        Some(format!(
+            r#"try {{
+  Object.defineProperty(Navigator.prototype, "language", {{ configurable: true, get: () => "{locale}" }});
+  Object.defineProperty(Navigator.prototype, "languages", {{ configurable: true, get: () => ["{locale}", "{primary}"] }});
+}} catch (_) {{}}"#
+        ))
     }
 }
 
@@ -162,6 +222,19 @@ mod tests {
         assert!(parsed.discord.show_cover);
         assert!(parsed.start_maximized);
         assert!(parsed.check_updates_on_start);
+        assert_eq!(parsed.browser_language, BrowserLanguage::Automatic);
+    }
+
+    #[test]
+    fn browser_language_has_safe_webview_arguments_and_script() {
+        assert_eq!(BrowserLanguage::Automatic.browser_arguments(), None);
+        let arguments = BrowserLanguage::German.browser_arguments().unwrap();
+        assert!(arguments.contains("--lang=de-DE"));
+        assert!(arguments.contains("msSmartScreenProtection"));
+
+        let script = BrowserLanguage::German.navigator_override_script().unwrap();
+        assert!(script.contains("de-DE"));
+        assert!(script.contains("\"de\""));
     }
 
     #[test]

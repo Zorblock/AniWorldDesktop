@@ -38,6 +38,23 @@
             </span>
             <input id="start-maximized" type="checkbox" />
           </label>
+          <div class="setting-row setting-row--control">
+            <label for="browser-language">
+              <strong>Browser language</strong>
+              <small>Automatic follows the Windows display language.</small>
+            </label>
+            <select id="browser-language">
+              <option value="automatic">Automatic</option>
+              <option value="de-DE">German</option>
+              <option value="en-US">English</option>
+              <option value="fr-FR">French</option>
+              <option value="es-ES">Spanish</option>
+              <option value="it-IT">Italian</option>
+              <option value="pl-PL">Polish</option>
+              <option value="pt-BR">Portuguese</option>
+              <option value="ja-JP">Japanese</option>
+            </select>
+          </div>
         </section>
 
         <section class="settings-section" aria-labelledby="discord-heading">
@@ -144,6 +161,51 @@
           </div>
         </section>
 
+        <section class="settings-section settings-section--danger" aria-labelledby="data-heading">
+          <div class="section-heading">
+            <h2 id="data-heading">Browser data</h2>
+            <p>Manage data stored by the embedded browser on this device.</p>
+          </div>
+
+          <div class="storage-summary" aria-label="Storage usage">
+            <span><small>Cache</small><strong id="cache-size">Calculating…</strong></span>
+            <span><small>Browser data</small><strong id="browser-data-size">Calculating…</strong></span>
+            <span><small>All app data</small><strong id="app-data-size">Calculating…</strong></span>
+          </div>
+
+          <div class="danger-actions">
+            <div class="danger-row">
+              <span>
+                <strong>Clear cache</strong>
+                <small>Removes temporary website files. Sign-ins and settings are kept.</small>
+              </span>
+              <button type="button" class="button button--danger" data-danger-action="cache">Clear cache</button>
+            </div>
+            <div class="danger-row">
+              <span>
+                <strong>Clear cookies and sign-ins</strong>
+                <small>Signs you out and removes website storage, saved passwords and autofill data. The app restarts.</small>
+              </span>
+              <button type="button" class="button button--danger" data-danger-action="siteData">Clear sign-ins</button>
+            </div>
+            <div class="danger-row">
+              <span>
+                <strong>Clear all browsing data</strong>
+                <small>Also removes cache, history and all other WebView profile data. The app restarts.</small>
+              </span>
+              <button type="button" class="button button--danger" data-danger-action="all">Clear browser data</button>
+            </div>
+            <div class="danger-row">
+              <span>
+                <strong>Reset all app data</strong>
+                <small>Deletes browser data, AniWorld Desktop settings and local support files. The app restarts with defaults.</small>
+              </span>
+              <button type="button" class="button button--danger button--danger-strong" data-danger-action="reset">Reset app</button>
+            </div>
+          </div>
+          <span id="storage-status" class="status-text" role="status"></span>
+        </section>
+
         <footer class="form-actions">
           <span id="save-status" class="status-text" role="status"></span>
           <button id="reset-settings" type="button" class="button button--secondary">Reset to defaults</button>
@@ -151,5 +213,14 @@
         </footer>
       </form>
     </main>
+
+    <dialog id="danger-confirm" class="confirm-dialog" aria-labelledby="confirm-title">
+      <h2 id="confirm-title">Confirm action</h2>
+      <p id="confirm-message"></p>
+      <div class="confirm-dialog__actions">
+        <button id="cancel-danger" type="button" class="button button--secondary">Cancel</button>
+        <button id="confirm-danger" type="button" class="button button--danger button--danger-strong">Continue</button>
+      </div>
+    </dialog>
   </body>
 </html>

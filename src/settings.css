@@ -180,6 +180,17 @@ small,
   gap: 4px;
 }
 
+.setting-row--control > label {
+  display: grid;
+  gap: 4px;
+  cursor: default;
+}
+
+.setting-row--control select {
+  width: 190px;
+  flex: 0 0 auto;
+}
+
 .setting-row strong {
   font-size: 13px;
   font-weight: 600;
@@ -366,6 +377,124 @@ code {
   color: #8dc49a;
 }
 
+.settings-section--danger {
+  padding-bottom: 28px;
+}
+
+.settings-section--danger h2 {
+  color: #efaaa4;
+}
+
+.storage-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 18px;
+  border: 1px solid #343b48;
+  border-radius: 4px;
+  background: #171c25;
+}
+
+.storage-summary > span {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px 14px;
+}
+
+.storage-summary > span + span {
+  border-left: 1px solid #343b48;
+}
+
+.storage-summary strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.danger-actions {
+  border-top: 1px solid #292f3a;
+}
+
+.danger-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px 0;
+  border-bottom: 1px solid #292f3a;
+}
+
+.danger-row > span {
+  display: grid;
+  gap: 4px;
+}
+
+.danger-row strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.danger-row .button {
+  flex: 0 0 auto;
+}
+
+.settings-section--danger > .status-text {
+  display: block;
+  min-height: 16px;
+  margin-top: 12px;
+}
+
+.button--danger {
+  border-color: #71403e;
+  color: #f0b3ae;
+  background: transparent;
+}
+
+.button--danger:hover:not(:disabled) {
+  border-color: #96504b;
+  color: #ffd1cd;
+  background: #281c1e;
+}
+
+.button--danger-strong {
+  color: #fff;
+  background: #a33b34;
+}
+
+.button--danger-strong:hover:not(:disabled) {
+  background: #b4473f;
+}
+
+.confirm-dialog {
+  width: min(440px, calc(100vw - 40px));
+  padding: 22px;
+  border: 1px solid #3b424f;
+  border-radius: 5px;
+  outline: 0;
+  color: #e6e9ef;
+  background: #171c25;
+  box-shadow: 0 16px 40px rgb(0 0 0 / 45%);
+}
+
+.confirm-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.confirm-dialog p {
+  margin-top: 10px;
+  color: #a5adba;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.confirm-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 22px;
+}
+
 @media (max-width: 620px) {
   .settings-shell {
     padding-right: 24px;
@@ -375,5 +504,29 @@ code {
   .template-grid,
   .template-grid--two {
     grid-template-columns: 1fr;
+  }
+
+  .setting-row--control,
+  .danger-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .setting-row--control select {
+    width: 100%;
+  }
+
+  .storage-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .storage-summary > span + span {
+    border-top: 1px solid #343b48;
+    border-left: 0;
+  }
+
+  .danger-row .button {
+    align-self: flex-start;
   }
 }

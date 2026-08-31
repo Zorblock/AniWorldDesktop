@@ -20,6 +20,16 @@ interface DiscordSettings {
 interface AppSettings {
   startMaximized: boolean;
   checkUpdatesOnStart: boolean;
+  browserLanguage:
+    | "automatic"
+    | "de-DE"
+    | "en-US"
+    | "fr-FR"
+    | "es-ES"
+    | "it-IT"
+    | "pl-PL"
+    | "pt-BR"
+    | "ja-JP";
   discord: DiscordSettings;
 }
 
@@ -32,6 +42,19 @@ interface UpdateCheckResult {
   currentVersion: string;
   availableVersion: string | null;
 }
+
+interface SettingsSaveResult {
+  settings: AppSettings;
+  restartRequired: boolean;
+}
+
+interface StorageInfo {
+  cacheBytes: number;
+  browserDataBytes: number;
+  appDataBytes: number;
+}
+
+type DangerAction = "cache" | "siteData" | "all" | "reset";
 
 type PresetName = "standard" | "anime-status" | "compact" | "private" | "custom";
 
@@ -120,9 +143,23 @@ const browsingState = textInput("browsing-state");
 const statusTemplate = textInput("status-template");
 const detailsTemplate = textInput("details-template");
 const stateTemplate = textInput("state-template");
+const browserLanguage = requiredElement<HTMLSelectElement>("browser-language");
+const cacheSize = requiredElement<HTMLElement>("cache-size");
+const browserDataSize = requiredElement<HTMLElement>("browser-data-size");
+const appDataSize = requiredElement<HTMLElement>("app-data-size");
+const storageStatus = requiredElement<HTMLElement>("storage-status");
+const dangerDialog = requiredElement<HTMLDialogElement>("danger-confirm");
+const confirmTitle = requiredElement<HTMLElement>("confirm-title");
+const confirmMessage = requiredElement<HTMLElement>("confirm-message");
+const confirmDangerButton = requiredElement<HTMLButtonElement>("confirm-danger");
+const cancelDangerButton = requiredElement<HTMLButtonElement>("cancel-danger");
+const dangerButtons = Array.from(
+  document.querySelectorAll<HTMLButtonElement>("[data-danger-action]"),
+);
 
 let settingsLoaded = false;
 let applyingPreset = false;
+let pendingDangerAction: DangerAction | null = null;
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -138,6 +175,42 @@ const setStatus = (
   } else {
     delete element.dataset.kind;
   }
+};
+
+const formatBytes = (bytes: number): string => {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return "0 B";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const unit = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** unit;
+  return `${value.toLocaleString(undefined, {
+    maximumFractionDigits: unit === 0 ? 0 : 1,
+  })} ${units[unit]}`;
+};
+
+const renderStorageInfo = (info: StorageInfo) => {
+  cacheSize.textContent = formatBytes(info.cacheBytes);
+  browserDataSize.textContent = formatBytes(info.browserDataBytes);
+  appDataSize.textContent = formatBytes(info.appDataBytes);
+};
+
+const loadStorageInfo = () => {
+  void invoke<StorageInfo>("browser_storage_info")
+    .then((info) => {
+      renderStorageInfo(info);
+      setStatus(storageStatus, "");
+    })
+    .catch((error: unknown) => {
+      setStatus(storageStatus, errorMessage(error), "error");
+    });
+};
+
+const restartApp = (statusElement: HTMLElement, message: string) => {
+  setStatus(statusElement, message, "success");
+  void invoke("restart_app").catch((error: unknown) => {
+    setStatus(statusElement, errorMessage(error), "error");
+  });
 };
 
 const runWindowAction = (action: () => Promise<void>) => {
@@ -258,6 +331,7 @@ const readDiscordSettings = (): DiscordSettings => ({
 const readSettings = (): AppSettings => ({
   startMaximized: checkbox("start-maximized").checked,
   checkUpdatesOnStart: checkbox("check-updates-on-start").checked,
+  browserLanguage: browserLanguage.value as AppSettings["browserLanguage"],
   discord: readDiscordSettings(),
 });
 
@@ -277,6 +351,7 @@ const detectPreset = (settings: DiscordSettings): PresetName => {
 const populateSettings = (settings: AppSettings) => {
   checkbox("start-maximized").checked = settings.startMaximized;
   checkbox("check-updates-on-start").checked = settings.checkUpdatesOnStart;
+  browserLanguage.value = settings.browserLanguage;
   checkbox("discord-enabled").checked = settings.discord.enabled;
   checkbox("show-browsing-activity").checked = settings.discord.showBrowsingActivity;
   checkbox("show-anime-title").checked = settings.discord.showAnimeTitle;
@@ -331,7 +406,7 @@ document
   });
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
+  if (event.key === "Escape" && !dangerDialog.open) {
     runWindowAction(() => settingsWindow.hide());
   }
 });
@@ -358,10 +433,14 @@ settingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
   saveButton.disabled = true;
   setStatus(saveStatus, "Saving…");
-  void invoke<AppSettings>("save_settings", { settings: readSettings() })
-    .then((settings) => {
-      populateSettings(settings);
-      setStatus(saveStatus, "Settings saved", "success");
+  void invoke<SettingsSaveResult>("save_settings", { settings: readSettings() })
+    .then((result) => {
+      populateSettings(result.settings);
+      if (result.restartRequired) {
+        restartApp(saveStatus, "Restarting to apply the browser language…");
+      } else {
+        setStatus(saveStatus, "Settings saved", "success");
+      }
     })
     .catch((error: unknown) => {
       saveButton.disabled = false;
@@ -376,17 +455,117 @@ resetButton.addEventListener("click", () => {
 
   resetButton.disabled = true;
   setStatus(saveStatus, "Resetting…");
-  void invoke<AppSettings>("reset_settings")
-    .then((settings) => {
-      populateSettings(settings);
+  void invoke<SettingsSaveResult>("reset_settings")
+    .then((result) => {
+      populateSettings(result.settings);
       saveButton.disabled = true;
-      setStatus(saveStatus, "Defaults restored", "success");
+      if (result.restartRequired) {
+        restartApp(saveStatus, "Restarting with default settings…");
+      } else {
+        setStatus(saveStatus, "Defaults restored", "success");
+      }
     })
     .catch((error: unknown) => {
       setStatus(saveStatus, errorMessage(error), "error");
     })
     .finally(() => {
       resetButton.disabled = false;
+    });
+});
+
+const dangerCopy: Record<
+  DangerAction,
+  { title: string; message: string; confirm: string }
+> = {
+  cache: {
+    title: "Clear browser cache?",
+    message: "Temporary website files will be removed. Your sign-ins and app settings will remain.",
+    confirm: "Clear cache",
+  },
+  siteData: {
+    title: "Clear cookies and sign-ins?",
+    message: "You will be signed out of websites. Website storage, saved passwords and autofill data will also be removed, then the app will restart.",
+    confirm: "Clear sign-ins",
+  },
+  all: {
+    title: "Clear all browsing data?",
+    message: "The complete embedded browser profile will be cleared, including history, cache, cookies and saved credentials. AniWorld Desktop settings are kept.",
+    confirm: "Clear browser data",
+  },
+  reset: {
+    title: "Reset AniWorld Desktop?",
+    message: "All local browser data, app settings and support files will be permanently deleted. The app will restart with defaults.",
+    confirm: "Reset app",
+  },
+};
+
+for (const button of dangerButtons) {
+  button.addEventListener("click", () => {
+    const action = button.dataset.dangerAction as DangerAction | undefined;
+    if (!action || !(action in dangerCopy)) {
+      return;
+    }
+    pendingDangerAction = action;
+    const copy = dangerCopy[action];
+    confirmTitle.textContent = copy.title;
+    confirmMessage.textContent = copy.message;
+    confirmDangerButton.textContent = copy.confirm;
+    dangerDialog.showModal();
+  });
+}
+
+cancelDangerButton.addEventListener("click", () => {
+  pendingDangerAction = null;
+  dangerDialog.close();
+});
+
+dangerDialog.addEventListener("cancel", () => {
+  pendingDangerAction = null;
+});
+
+confirmDangerButton.addEventListener("click", () => {
+  const action = pendingDangerAction;
+  if (!action) {
+    return;
+  }
+  pendingDangerAction = null;
+  dangerDialog.close();
+  dangerButtons.forEach((button) => {
+    button.disabled = true;
+  });
+  setStatus(storageStatus, action === "reset" ? "Preparing reset…" : "Clearing data…");
+
+  if (action === "reset") {
+    void invoke("reset_all_app_data")
+      .then(() => {
+        setStatus(storageStatus, "Restarting with a clean profile…", "success");
+      })
+      .catch((error: unknown) => {
+        setStatus(storageStatus, errorMessage(error), "error");
+        dangerButtons.forEach((button) => {
+          button.disabled = false;
+        });
+      });
+    return;
+  }
+
+  void invoke<StorageInfo>("clear_browser_data", { kind: action })
+    .then((info) => {
+      renderStorageInfo(info);
+      if (action === "siteData" || action === "all") {
+        restartApp(storageStatus, "Data cleared. Restarting…");
+      } else {
+        setStatus(storageStatus, "Cache cleared", "success");
+        dangerButtons.forEach((button) => {
+          button.disabled = false;
+        });
+      }
+    })
+    .catch((error: unknown) => {
+      setStatus(storageStatus, errorMessage(error), "error");
+      dangerButtons.forEach((button) => {
+        button.disabled = false;
+      });
     });
 });
 
@@ -422,6 +601,7 @@ void invoke<SettingsBootstrap>("load_settings")
     currentVersion.textContent = `Current version ${bootstrap.appVersion}`;
     settingsLoaded = true;
     setStatus(saveStatus, "");
+    loadStorageInfo();
   })
   .catch((error: unknown) => {
     setStatus(saveStatus, errorMessage(error), "error");
