@@ -446,15 +446,11 @@ impl AdBlocker {
     style.dataset.aniworldTitlebar = "true";
     style.textContent = `
       html.aniworld-desktop-framed {{
-        height: 100% !important;
-        overflow: hidden !important;
+        min-height: 100% !important;
       }}
       html.aniworld-desktop-framed > body {{
-        width: 100% !important;
-        height: calc(100vh - 46px) !important;
-        min-height: 0 !important;
+        min-height: calc(100vh - 46px) !important;
         margin: 46px 0 0 !important;
-        overflow: auto !important;
       }}
       [data-aniworld-titlebar] {{
         position: fixed !important;
@@ -1231,6 +1227,8 @@ mod tests {
         assert!(script.contains("titlebarButton(\"back\", \"Back\""));
         assert!(script.contains("titlebarButton(\"close\", \"Close\""));
         assert!(script.contains("https://aniworld-rpc.invalid/settings/open"));
+        assert!(script.contains("min-height: calc(100vh - 46px) !important"));
+        assert!(!script.contains("overflow: auto !important"));
         assert!(!script.contains("data-aniworld-settings-button"));
     }
 
