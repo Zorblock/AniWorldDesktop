@@ -128,6 +128,74 @@ body.video-embed-mode .video-page__player-frame {
 }
 "#;
 
+const FULLSCREEN_LAYOUT_CSS: &str = r#"
+html.aniworld-desktop-fullscreen,
+html.aniworld-desktop-fullscreen > body,
+html.aniworld-desktop-framed.aniworld-desktop-fullscreen > body {
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: #000 !important;
+}
+html.aniworld-desktop-fullscreen [data-aniworld-titlebar] {
+  display: none !important;
+}
+html.aniworld-desktop-fullscreen :fullscreen,
+html.aniworld-desktop-fullscreen :-webkit-full-screen,
+html.aniworld-desktop-fullscreen .jwplayer.jw-flag-fullscreen,
+html.aniworld-desktop-fullscreen .video-js.vjs-fullscreen,
+html.aniworld-desktop-fullscreen .plyr--fullscreen-active,
+html.aniworld-desktop-fullscreen .dplayer-fulled {
+  position: fixed !important;
+  inset: 0 !important;
+  box-sizing: border-box !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+  background: #000 !important;
+}
+html.aniworld-desktop-fullscreen :fullscreen > iframe,
+html.aniworld-desktop-fullscreen :fullscreen > video,
+html.aniworld-desktop-fullscreen :fullscreen video,
+html.aniworld-desktop-fullscreen :-webkit-full-screen > iframe,
+html.aniworld-desktop-fullscreen :-webkit-full-screen > video,
+html.aniworld-desktop-fullscreen :-webkit-full-screen video,
+html.aniworld-desktop-fullscreen .jwplayer.jw-flag-fullscreen .jw-media,
+html.aniworld-desktop-fullscreen .jwplayer.jw-flag-fullscreen .jw-video,
+html.aniworld-desktop-fullscreen .video-js.vjs-fullscreen .vjs-tech,
+html.aniworld-desktop-fullscreen .plyr--fullscreen-active .plyr__video-wrapper,
+html.aniworld-desktop-fullscreen .plyr--fullscreen-active video,
+html.aniworld-desktop-fullscreen .dplayer-fulled .dplayer-video-wrap,
+html.aniworld-desktop-fullscreen .dplayer-fulled video {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+html.aniworld-desktop-fullscreen video {
+  object-fit: contain !important;
+}
+"#;
+
 #[derive(Clone)]
 pub struct PageContext(Arc<RwLock<String>>);
 
@@ -188,8 +256,9 @@ impl AdBlocker {
         }
 
         let css_json = serde_json::to_string(&css).unwrap_or_else(|_| "\"\"".to_owned());
+        let frame_css = format!("{EMBED_PLAYER_CSS}\n{FULLSCREEN_LAYOUT_CSS}");
         let embed_player_css_json =
-            serde_json::to_string(EMBED_PLAYER_CSS).unwrap_or_else(|_| "\"\"".to_owned());
+            serde_json::to_string(&frame_css).unwrap_or_else(|_| "\"\"".to_owned());
         format!(
             r#"
 (() => {{
@@ -444,6 +513,17 @@ impl AdBlocker {
     document.addEventListener("DOMContentLoaded", installEmbedPlayerFilters, {{ once: true }});
   }}
 
+  const syncFullscreenLayout = () => {{
+    const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+    document.documentElement?.classList.toggle(
+      "aniworld-desktop-fullscreen",
+      Boolean(fullscreenElement)
+    );
+  }};
+  document.addEventListener("fullscreenchange", syncFullscreenLayout);
+  document.addEventListener("webkitfullscreenchange", syncFullscreenLayout);
+  syncFullscreenLayout();
+
   if (!isAniWorld || !isTopFrame) {{
     return;
   }}
@@ -489,11 +569,41 @@ impl AdBlocker {
     style.dataset.aniworldTitlebar = "true";
     style.textContent = `
       html.aniworld-desktop-framed {{
-        min-height: 100% !important;
+        width: 100% !important;
+        height: 100% !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
       }}
       html.aniworld-desktop-framed > body {{
+        box-sizing: border-box !important;
+        width: 100% !important;
+        height: calc(100vh - 46px) !important;
         min-height: calc(100vh - 46px) !important;
         margin: 46px 0 0 !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior-y: contain !important;
+        scrollbar-color: #596477 #111722 !important;
+        scrollbar-width: thin !important;
+      }}
+      html.aniworld-desktop-framed > body::-webkit-scrollbar {{
+        width: 10px !important;
+        height: 10px !important;
+      }}
+      html.aniworld-desktop-framed > body::-webkit-scrollbar-track {{
+        background: #111722 !important;
+      }}
+      html.aniworld-desktop-framed > body::-webkit-scrollbar-thumb {{
+        min-height: 36px !important;
+        border: 2px solid #111722 !important;
+        border-radius: 8px !important;
+        background: #596477 !important;
+      }}
+      html.aniworld-desktop-framed > body::-webkit-scrollbar-thumb:hover {{
+        background: #707c91 !important;
+      }}
+      html.aniworld-desktop-framed > body::-webkit-scrollbar-corner {{
+        background: #111722 !important;
       }}
       [data-aniworld-titlebar] {{
         position: fixed !important;
@@ -1391,9 +1501,27 @@ mod tests {
         assert!(script.contains("dataset.aniworldUpdateTooltip"));
         assert!(script.contains("Install Update"));
         assert!(script.contains("updateButton.removeAttribute(\"title\")"));
-        assert!(script.contains("min-height: calc(100vh - 46px) !important"));
-        assert!(!script.contains("overflow: auto !important"));
+        assert!(script.contains("height: calc(100vh - 46px) !important"));
+        assert!(script.contains("overflow-y: auto !important"));
+        assert!(script.contains("body::-webkit-scrollbar-thumb"));
+        assert!(script.contains("scrollbar-color: #596477 #111722"));
         assert!(!script.contains("data-aniworld-settings-button"));
+    }
+
+    #[test]
+    fn initialization_script_resets_native_fullscreen_layout_in_every_frame() {
+        let blocker = AdBlocker {
+            engine: Engine::new_with_list_text(""),
+        };
+        let script = blocker.initialization_script();
+
+        assert!(script.contains("aniworld-desktop-fullscreen"));
+        assert!(script.contains("document.fullscreenElement"));
+        assert!(script.contains("document.webkitFullscreenElement"));
+        assert!(script.contains("width: 100vw !important"));
+        assert!(script.contains("height: 100vh !important"));
+        assert!(script.contains(".jwplayer.jw-flag-fullscreen"));
+        assert!(script.contains(":fullscreen > iframe"));
     }
 
     #[test]
