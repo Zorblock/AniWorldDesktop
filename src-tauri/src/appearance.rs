@@ -138,10 +138,11 @@ pub fn initialization_script(initially_enabled: bool) -> String {
     )
 }
 
-pub fn apply(window: &WebviewWindow, enabled: bool) -> tauri::Result<()> {
+fn apply_script(enabled: bool) -> String {
     let css = serde_json::to_string(&stylesheet()).unwrap_or_else(|_| "\"\"".to_owned());
-    window.eval(format!(
-        r#"try {{
+    format!(
+        r#"(() => {{
+try {{
   localStorage.setItem("{STORAGE_KEY}", "{}");
 }} catch (_) {{}}
 const appearanceRoot = document.documentElement;
@@ -154,9 +155,14 @@ if (appearanceRoot) {{
   appearanceStyle.textContent = {css};
   (document.head || appearanceRoot).appendChild(appearanceStyle);
   appearanceRoot.classList.toggle("aniworld-nyan-scrollbar", {enabled});
-}}"#,
+}}
+}})();"#,
         if enabled { "1" } else { "0" }
-    ))
+    )
+}
+
+pub fn apply(window: &WebviewWindow, enabled: bool) -> tauri::Result<()> {
+    window.eval(apply_script(enabled))
 }
 
 #[cfg(test)]
@@ -185,5 +191,15 @@ mod tests {
         assert!(script.contains("let nyanScrollbarEnabled = true"));
         assert!(script.contains(STORAGE_KEY));
         assert!(script.contains("appearanceObserver.observe(document"));
+    }
+
+    #[test]
+    fn live_updates_run_in_an_isolated_scope() {
+        let enabled = apply_script(true);
+        let disabled = apply_script(false);
+        assert!(enabled.starts_with("(() => {"));
+        assert!(enabled.ends_with("})();"));
+        assert!(enabled.contains("aniworld-nyan-scrollbar\", true"));
+        assert!(disabled.contains("aniworld-nyan-scrollbar\", false"));
     }
 }
