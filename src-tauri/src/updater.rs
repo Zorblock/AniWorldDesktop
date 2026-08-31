@@ -12,6 +12,12 @@ use tauri_plugin_updater::UpdaterExt;
 
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(15);
 const INSTALL_STATUS_DELAY: Duration = Duration::from_millis(600);
+const STARTUP_CHECK_ATTEMPTS: usize = 4;
+const STARTUP_RETRY_DELAYS: [Duration; STARTUP_CHECK_ATTEMPTS - 1] = [
+    Duration::from_secs(2),
+    Duration::from_secs(5),
+    Duration::from_secs(10),
+];
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,6 +54,7 @@ impl Default for UpdateUiState {
 pub struct UpdateController {
     state: RwLock<UpdateUiState>,
     operation_running: AtomicBool,
+    check_completed: AtomicBool,
 }
 
 impl Default for UpdateController {
@@ -55,6 +62,7 @@ impl Default for UpdateController {
         Self {
             state: RwLock::new(UpdateUiState::default()),
             operation_running: AtomicBool::new(false),
+            check_completed: AtomicBool::new(false),
         }
     }
 }
@@ -94,6 +102,10 @@ impl UpdateController {
             .and_then(|state| state.version.clone())
     }
 
+    fn has_completed_check(&self) -> bool {
+        self.check_completed.load(Ordering::Acquire)
+    }
+
     fn publish_error(&self, app: &AppHandle, version: Option<String>, error: &str) {
         self.set_state(
             app,
@@ -122,14 +134,76 @@ pub struct UpdateCheckResult {
     pub available_version: Option<String>,
 }
 
+#[derive(Debug)]
+struct UpdateCheckError {
+    message: String,
+    retryable: bool,
+}
+
+impl UpdateCheckError {
+    fn operation(message: String) -> Self {
+        Self {
+            message,
+            retryable: false,
+        }
+    }
+
+    fn updater(error: tauri_plugin_updater::Error) -> Self {
+        let retryable = matches!(
+            error,
+            tauri_plugin_updater::Error::Io(_)
+                | tauri_plugin_updater::Error::Reqwest(_)
+                | tauri_plugin_updater::Error::Network(_)
+                | tauri_plugin_updater::Error::ReleaseNotFound
+        );
+        Self {
+            message: error.to_string(),
+            retryable,
+        }
+    }
+}
+
 pub fn check_on_start(app: AppHandle, controller: Arc<UpdateController>) {
     if cfg!(debug_assertions) && std::env::var("ANIWORLD_UPDATE_CHECK").as_deref() != Ok("1") {
         return;
     }
 
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = check_for_update(&app, &controller).await {
-            eprintln!("Update check failed: {error}");
+        let attempts = STARTUP_RETRY_DELAYS
+            .iter()
+            .copied()
+            .map(Some)
+            .chain(std::iter::once(None));
+        for (attempt, retry_delay) in attempts.enumerate() {
+            if attempt > 0 && controller.has_completed_check() {
+                return;
+            }
+
+            match check_for_update(&app, &controller).await {
+                Ok(_) => return,
+                Err(error) if error.retryable && retry_delay.is_some() => {
+                    let delay = retry_delay.expect("retry attempts always have a delay");
+                    eprintln!(
+                        "Startup update check attempt {} failed: {}. Retrying in {} seconds.",
+                        attempt + 1,
+                        error.message,
+                        delay.as_secs()
+                    );
+                    let _ = tauri::async_runtime::spawn_blocking(move || {
+                        std::thread::sleep(delay);
+                    })
+                    .await;
+                }
+                Err(error) => {
+                    eprintln!(
+                        "Startup update check failed after {} attempt{}: {}",
+                        attempt + 1,
+                        if attempt == 0 { "" } else { "s" },
+                        error.message
+                    );
+                    return;
+                }
+            }
         }
     });
 }
@@ -138,7 +212,9 @@ pub async fn check_manually(
     app: AppHandle,
     controller: Arc<UpdateController>,
 ) -> Result<UpdateCheckResult, String> {
-    check_for_update(&app, &controller).await
+    check_for_update(&app, &controller)
+        .await
+        .map_err(|error| error.message)
 }
 
 pub fn install_requested(app: AppHandle, controller: Arc<UpdateController>) {
@@ -154,16 +230,19 @@ pub fn install_requested(app: AppHandle, controller: Arc<UpdateController>) {
 async fn check_for_update(
     app: &AppHandle,
     controller: &Arc<UpdateController>,
-) -> Result<UpdateCheckResult, String> {
-    let _operation = controller.acquire_operation()?;
+) -> Result<UpdateCheckResult, UpdateCheckError> {
+    let _operation = controller
+        .acquire_operation()
+        .map_err(UpdateCheckError::operation)?;
     let current_version = env!("CARGO_PKG_VERSION").to_owned();
     let updater = app
         .updater_builder()
         .timeout(UPDATE_TIMEOUT)
         .build()
-        .map_err(|error| error.to_string())?;
-    let update = updater.check().await.map_err(|error| error.to_string())?;
+        .map_err(UpdateCheckError::updater)?;
+    let update = updater.check().await.map_err(UpdateCheckError::updater)?;
     let available_version = update.map(|update| update.version);
+    controller.check_completed.store(true, Ordering::Release);
 
     let state = match available_version.as_ref() {
         Some(version) => UpdateUiState {
@@ -333,5 +412,24 @@ mod tests {
 
         assert!(!error.contains('\n'));
         assert_eq!(error.chars().count(), 160);
+    }
+
+    #[test]
+    fn startup_retry_only_accepts_transient_update_errors() {
+        assert!(UpdateCheckError::updater(tauri_plugin_updater::Error::ReleaseNotFound).retryable);
+        assert!(
+            UpdateCheckError::updater(tauri_plugin_updater::Error::Network(
+                "connection closed".to_owned()
+            ))
+            .retryable
+        );
+        assert!(!UpdateCheckError::updater(tauri_plugin_updater::Error::EmptyEndpoints).retryable);
+    }
+
+    #[test]
+    fn startup_retry_uses_a_short_bounded_backoff() {
+        assert_eq!(STARTUP_CHECK_ATTEMPTS, 4);
+        assert_eq!(STARTUP_RETRY_DELAYS[0], Duration::from_secs(2));
+        assert_eq!(STARTUP_RETRY_DELAYS[2], Duration::from_secs(10));
     }
 }

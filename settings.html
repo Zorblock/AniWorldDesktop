@@ -27,6 +27,24 @@
       </header>
 
       <form id="settings-form">
+        <section class="settings-section" aria-labelledby="updates-heading">
+          <div class="section-heading">
+            <h2 id="updates-heading">Updates</h2>
+            <p id="current-version">Current version</p>
+          </div>
+          <label class="setting-row" for="check-updates-on-start">
+            <span>
+              <strong>Check automatically on startup</strong>
+              <small>Only a newer signed release will be offered for installation.</small>
+            </span>
+            <input id="check-updates-on-start" type="checkbox" />
+          </label>
+          <div class="update-row">
+            <button id="check-updates" type="button" class="button button--secondary">Check for updates</button>
+            <span id="update-status" class="status-text" role="status"></span>
+          </div>
+        </section>
+
         <section class="settings-section" aria-labelledby="general-heading">
           <div class="section-heading">
             <h2 id="general-heading">General</h2>
@@ -141,24 +159,6 @@
               </div>
             </div>
           </fieldset>
-        </section>
-
-        <section class="settings-section" aria-labelledby="updates-heading">
-          <div class="section-heading">
-            <h2 id="updates-heading">Updates</h2>
-            <p id="current-version">Current version</p>
-          </div>
-          <label class="setting-row" for="check-updates-on-start">
-            <span>
-              <strong>Check automatically on startup</strong>
-              <small>Only a newer signed release will be offered for installation.</small>
-            </span>
-            <input id="check-updates-on-start" type="checkbox" />
-          </label>
-          <div class="update-row">
-            <button id="check-updates" type="button" class="button button--secondary">Check for updates</button>
-            <span id="update-status" class="status-text" role="status"></span>
-          </div>
         </section>
 
         <section class="settings-section settings-section--danger" aria-labelledby="data-heading">
