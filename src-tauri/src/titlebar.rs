@@ -259,9 +259,6 @@ pub fn initialization_script() -> String {
         border: 0 !important;
         background: #11151d !important;
       }}
-      html.aniworld-desktop-framed[data-aniworld-settings-open="true"] > body {{
-        overflow: hidden !important;
-      }}
       [data-aniworld-update-control]:hover [data-aniworld-update-tooltip],
       [data-aniworld-update-control]:focus-within [data-aniworld-update-tooltip] {{
         opacity: 1 !important;
@@ -435,7 +432,6 @@ pub fn initialization_script() -> String {
         return;
       }}
       settingsOverlay.dataset.open = "false";
-      document.documentElement.removeAttribute("data-aniworld-settings-open");
       settingsButton.focus();
     }};
 
@@ -444,7 +440,6 @@ pub fn initialization_script() -> String {
         settingsFrame.src = settingsPageUrl;
       }}
       settingsOverlay.dataset.open = "true";
-      document.documentElement.dataset.aniworldSettingsOpen = "true";
       settingsFrame.focus();
     }};
 
