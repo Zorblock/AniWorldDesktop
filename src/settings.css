@@ -1,8 +1,8 @@
 :root {
   font-family:
     Inter, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  color: #f5f7ff;
-  background: #0c1018;
+  color: #e7eaf0;
+  background: #11151d;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -21,9 +21,7 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(circle at 15% -10%, rgba(91, 111, 232, 0.18), transparent 42%),
-    #0c1018;
+  background: #11151d;
 }
 
 .native-icon {
@@ -41,8 +39,7 @@ body {
   width: 100%;
   height: 46px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: #101622;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
+  background: #151a23;
   user-select: none;
 }
 
@@ -50,14 +47,8 @@ body {
   display: flex;
   flex: 1;
   align-items: center;
-  gap: 9px;
   min-width: 0;
-  padding-left: 15px;
-}
-
-.app-titlebar__icon {
-  color: #7d8fff;
-  font-size: 17px;
+  padding-left: 16px;
 }
 
 .app-titlebar__title {
@@ -113,33 +104,16 @@ body {
 }
 
 .settings-shell {
-  width: min(100%, 720px);
+  width: 100%;
   height: calc(100vh - 46px);
   margin: 46px auto 0;
-  padding: 32px;
+  padding: 28px 30px;
   overflow-y: auto;
 }
 
 .settings-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.settings-icon {
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  width: 46px;
-  height: 46px;
-  border: 1px solid rgba(137, 153, 255, 0.24);
-  border-radius: 14px;
-  color: #91a1ff;
-  background: rgba(98, 119, 244, 0.12);
-}
-
-.settings-icon .native-icon {
-  font-size: 23px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 h1,
@@ -148,43 +122,16 @@ p {
 }
 
 h1 {
-  font-size: 24px;
-  font-weight: 650;
+  font-size: 22px;
+  font-weight: 600;
   line-height: 1.2;
   letter-spacing: -0.02em;
 }
 
 .settings-header p {
-  margin-top: 4px;
+  margin-top: 6px;
   color: #929bad;
   font-size: 14px;
-}
-
-.empty-state {
-  display: grid;
-  place-items: center;
-  min-height: 230px;
-  margin-top: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 18px;
-  color: #737d90;
-  background: rgba(255, 255, 255, 0.025);
-  text-align: center;
-}
-
-.empty-state__line {
-  align-self: end;
-  width: 42px;
-  height: 3px;
-  margin-bottom: 14px;
-  border-radius: 999px;
-  background: #6578ee;
-  box-shadow: 0 0 18px rgba(101, 120, 238, 0.55);
-}
-
-.empty-state p {
-  align-self: start;
-  font-size: 13px;
 }
 
 @media (max-width: 460px) {

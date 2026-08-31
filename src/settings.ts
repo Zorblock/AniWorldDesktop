@@ -17,12 +17,6 @@ document
   });
 
 document
-  .querySelector<HTMLButtonElement>('[data-window-action="minimize"]')
-  ?.addEventListener("click", () => {
-    runWindowAction(() => settingsWindow.minimize());
-  });
-
-document
   .querySelector<HTMLButtonElement>('[data-window-action="close"]')
   ?.addEventListener("click", () => {
     runWindowAction(() => settingsWindow.hide());
