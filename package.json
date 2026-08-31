@@ -17,7 +17,9 @@
     "preview": "vite preview",
     "tauri": "tauri"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1"
+  },
   "devDependencies": {
     "@clack/prompts": "^1.7.0",
     "@tauri-apps/cli": "^2",

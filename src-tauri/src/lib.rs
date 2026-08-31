@@ -21,22 +21,42 @@ const ANIWORLD_URL: &str = "https://aniworld.to";
 const DISCORD_CLIENT_ID: &str = "1542562842379554826";
 const APP_TITLE: &str = concat!("AniWorld Desktop v", env!("CARGO_PKG_VERSION"));
 
-fn open_settings_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+fn show_settings_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("settings") {
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
-        return Ok(());
     }
 
-    WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-        .title("Settings")
-        .inner_size(520.0, 420.0)
-        .min_inner_size(420.0, 320.0)
-        .resizable(true)
-        .maximizable(false)
-        .center()
-        .build()?;
+    Ok(())
+}
+
+fn create_settings_window(app: &tauri::AppHandle, data_directory: &Path) -> tauri::Result<()> {
+    let settings_window =
+        WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
+            .title("Settings")
+            .inner_size(520.0, 420.0)
+            .min_inner_size(420.0, 320.0)
+            .resizable(true)
+            .maximizable(false)
+            .decorations(false)
+            .shadow(true)
+            .background_color(tauri::window::Color(12, 16, 24, 255))
+            .data_directory(data_directory.to_owned())
+            .center()
+            .visible(false)
+            .skip_taskbar(true)
+            .build()?;
+
+    let window_on_close = settings_window.clone();
+    settings_window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            if let Err(error) = window_on_close.hide() {
+                eprintln!("Could not hide the settings window: {error}");
+            }
+        }
+    });
 
     Ok(())
 }
@@ -128,7 +148,7 @@ pub fn run() {
                 let app = settings_app.clone();
                 let window_app = app.clone();
                 if let Err(error) = app.run_on_main_thread(move || {
-                    if let Err(error) = open_settings_window(&window_app) {
+                    if let Err(error) = show_settings_window(&window_app) {
                         eprintln!("Could not open the settings window: {error}");
                     }
                 }) {
@@ -179,7 +199,7 @@ pub fn run() {
             .decorations(false)
             .shadow(true)
             .center()
-            .data_directory(data_directory)
+            .data_directory(data_directory.clone())
             .general_autofill_enabled(true)
             .initialization_script_for_all_frames(initialization_script)
             .on_navigation(move |url| {
@@ -250,6 +270,8 @@ pub fn run() {
                 }
             })
             .build()?;
+
+            create_settings_window(app.handle(), &data_directory)?;
 
             adblock::install_network_filter(
                 &window,
