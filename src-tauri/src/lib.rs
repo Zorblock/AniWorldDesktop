@@ -163,9 +163,8 @@ fn create_settings_window(
     let mut builder =
         WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
             .title("Settings")
-            .inner_size(700.0, 700.0)
-            .min_inner_size(560.0, 560.0)
-            .resizable(true)
+            .inner_size(800.0, 720.0)
+            .resizable(false)
             .maximizable(false)
             .decorations(false)
             .shadow(true)
