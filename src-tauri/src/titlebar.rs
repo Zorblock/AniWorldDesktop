@@ -1,13 +1,15 @@
 pub fn initialization_script() -> String {
+    let settings_url = if cfg!(debug_assertions) {
+        "http://localhost:1420/settings.html?embedded=1"
+    } else {
+        "http://tauri.localhost/settings.html?embedded=1"
+    };
+    let settings_url_json = serde_json::to_string(settings_url)
+        .unwrap_or_else(|_| "\"settings.html?embedded=1\"".into());
+
     format!(
         r#"
-  const openSettings = () => {{
-    fetch("https://aniworld-rpc.invalid/settings/open", {{
-      cache: "no-store",
-      credentials: "omit",
-      mode: "no-cors"
-    }}).catch(() => {{}});
-  }};
+  const settingsPageUrl = {settings_url_json};
 
   const sendWindowAction = (action) => {{
     const params = new URLSearchParams({{ action }});
@@ -209,6 +211,57 @@ pub fn initialization_script() -> String {
         transform: translateY(-2px) !important;
         transition: opacity 100ms ease, transform 100ms ease !important;
       }}
+      [data-aniworld-settings-overlay] {{
+        position: fixed !important;
+        inset: 46px 0 0 !important;
+        z-index: 2147483646 !important;
+        display: none !important;
+        place-items: center !important;
+        margin: 0 !important;
+        padding: 24px !important;
+        border: 0 !important;
+        background: rgba(5, 8, 13, 0.72) !important;
+        box-sizing: border-box !important;
+      }}
+      [data-aniworld-settings-overlay][data-open="true"] {{
+        display: grid !important;
+      }}
+      [data-aniworld-settings-backdrop] {{
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        border-radius: 0 !important;
+        background: transparent !important;
+        box-shadow: none !important;
+        cursor: default !important;
+      }}
+      [data-aniworld-settings-dialog] {{
+        position: relative !important;
+        z-index: 1 !important;
+        width: min(800px, 100%) !important;
+        height: min(720px, 100%) !important;
+        overflow: hidden !important;
+        border: 1px solid #343b48 !important;
+        border-radius: 6px !important;
+        background: #11151d !important;
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5) !important;
+      }}
+      [data-aniworld-settings-frame] {{
+        display: block !important;
+        width: 100% !important;
+        height: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        background: #11151d !important;
+      }}
+      html.aniworld-desktop-framed[data-aniworld-settings-open="true"] > body {{
+        overflow: hidden !important;
+      }}
       [data-aniworld-update-control]:hover [data-aniworld-update-tooltip],
       [data-aniworld-update-control]:focus-within [data-aniworld-update-tooltip] {{
         opacity: 1 !important;
@@ -354,7 +407,62 @@ pub fn initialization_script() -> String {
     }};
     renderUpdateState(window.__ANIWORLD_UPDATE_STATE__);
 
+    const settingsOverlay = document.createElement("div");
+    settingsOverlay.dataset.aniworldSettingsOverlay = "true";
+    settingsOverlay.dataset.open = "false";
+
+    const settingsBackdrop = document.createElement("button");
+    settingsBackdrop.type = "button";
+    settingsBackdrop.tabIndex = -1;
+    settingsBackdrop.dataset.aniworldSettingsBackdrop = "true";
+    settingsBackdrop.setAttribute("aria-label", "Close settings");
+
+    const settingsDialog = document.createElement("div");
+    settingsDialog.dataset.aniworldSettingsDialog = "true";
+    settingsDialog.setAttribute("role", "dialog");
+    settingsDialog.setAttribute("aria-modal", "true");
+    settingsDialog.setAttribute("aria-label", "Settings");
+
+    const settingsFrame = document.createElement("iframe");
+    settingsFrame.dataset.aniworldSettingsFrame = "true";
+    settingsFrame.title = "Settings";
+    settingsFrame.setAttribute("allow", "clipboard-read; clipboard-write");
+    settingsDialog.appendChild(settingsFrame);
+    settingsOverlay.append(settingsBackdrop, settingsDialog);
+
+    const closeSettings = () => {{
+      if (settingsOverlay.dataset.open !== "true") {{
+        return;
+      }}
+      settingsOverlay.dataset.open = "false";
+      document.documentElement.removeAttribute("data-aniworld-settings-open");
+      settingsButton.focus();
+    }};
+
+    const openSettings = () => {{
+      if (!settingsFrame.src) {{
+        settingsFrame.src = settingsPageUrl;
+      }}
+      settingsOverlay.dataset.open = "true";
+      document.documentElement.dataset.aniworldSettingsOpen = "true";
+      settingsFrame.focus();
+    }};
+
     const settingsButton = titlebarButton("settings", "Settings", "\uE713", openSettings);
+    settingsBackdrop.addEventListener("click", closeSettings);
+    settingsOverlay.addEventListener("wheel", (event) => event.preventDefault(), {{ passive: false }});
+    window.addEventListener("message", (event) => {{
+      if (event.source === settingsFrame.contentWindow &&
+          event.data?.type === "aniworld-desktop-settings-close") {{
+        closeSettings();
+      }}
+    }});
+    document.addEventListener("keydown", (event) => {{
+      if (event.key === "Escape" && settingsOverlay.dataset.open === "true") {{
+        event.preventDefault();
+        closeSettings();
+      }}
+    }});
 
     const windowControls = document.createElement("div");
     windowControls.dataset.aniworldWindowControls = "true";
@@ -368,6 +476,7 @@ pub fn initialization_script() -> String {
     titlebar.append(brand, navigation, dragRegion, updateControl, settingsButton, windowControls);
     document.documentElement.classList.add("aniworld-desktop-framed");
     (document.head || document.documentElement).appendChild(style);
+    document.body.appendChild(settingsOverlay);
     document.body.prepend(titlebar);
   }};
 
@@ -378,5 +487,6 @@ pub fn initialization_script() -> String {
   }}
 "#,
         app_version = env!("CARGO_PKG_VERSION"),
+        settings_url_json = settings_url_json,
     )
 }

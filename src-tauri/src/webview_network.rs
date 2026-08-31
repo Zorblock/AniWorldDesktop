@@ -6,8 +6,7 @@ use crate::{
     adblock::AdBlocker,
     webview_bridge::{
         anime_cover_url, cover_update, is_aniworld_episode_page, is_aniworld_page, playback_update,
-        settings_open_request, update_install_request, window_action_request, NetworkHandlers,
-        PageContext,
+        update_install_request, window_action_request, NetworkHandlers, PageContext,
     },
 };
 
@@ -85,19 +84,6 @@ unsafe fn install_webview2_network_filter(
                 let source_url = page_context.current_url();
                 if is_aniworld_episode_page(&source_url) {
                     (handlers.playback)(playing, seeking, position_ms, duration_ms, rate_milli);
-                }
-                let status = HSTRING::from("No Content");
-                let headers =
-                    HSTRING::from("Cache-Control: no-store\r\nAccess-Control-Allow-Origin: *\r\n");
-                let response =
-                    environment.CreateWebResourceResponse(None, 204, &status, &headers)?;
-                args.SetResponse(&response)?;
-                return Ok(());
-            }
-            if settings_open_request(&url) {
-                let source_url = page_context.current_url();
-                if is_aniworld_page(&source_url) {
-                    (handlers.settings)();
                 }
                 let status = HSTRING::from("No Content");
                 let headers =

@@ -23,8 +23,8 @@ use std::{
 };
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 use webview_bridge::{
-    CoverHandler, NetworkHandlers, PageContext, PlaybackHandler, SettingsHandler, UpdateHandler,
-    WindowAction, WindowHandler,
+    CoverHandler, NetworkHandlers, PageContext, PlaybackHandler, UpdateHandler, WindowAction,
+    WindowHandler,
 };
 
 const ANIWORLD_URL: &str = "https://aniworld.to";
@@ -145,52 +145,6 @@ async fn check_for_updates(
     updater::check_manually(app, Arc::clone(&state.updater)).await
 }
 
-fn show_settings_window(app: &tauri::AppHandle) -> tauri::Result<()> {
-    if let Some(window) = app.get_webview_window("settings") {
-        window.unminimize()?;
-        window.show()?;
-        window.set_focus()?;
-    }
-
-    Ok(())
-}
-
-fn create_settings_window(
-    app: &tauri::AppHandle,
-    data_directory: &Path,
-    settings: &AppSettings,
-) -> tauri::Result<()> {
-    let mut builder =
-        WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
-            .title("Settings")
-            .inner_size(800.0, 720.0)
-            .resizable(false)
-            .maximizable(false)
-            .decorations(false)
-            .shadow(true)
-            .background_color(tauri::window::Color(12, 16, 24, 255))
-            .data_directory(data_directory.to_owned())
-            .center()
-            .visible(false)
-            .skip_taskbar(true);
-    if let Some(arguments) = settings.browser_language.browser_arguments() {
-        builder = builder.additional_browser_args(&arguments);
-    }
-    let settings_window = builder.build()?;
-
-    let window_on_close = settings_window.clone();
-    settings_window.on_window_event(move |event| {
-        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-            api.prevent_close();
-            if let Err(error) = window_on_close.hide() {
-                eprintln!("Could not hide the settings window: {error}");
-            }
-        }
-    });
-
-    Ok(())
-}
-
 fn user_data_directory(fallback: &Path) -> PathBuf {
     std::env::var_os("APPDATA")
         .filter(|value| !value.is_empty())
@@ -304,18 +258,6 @@ pub fn run() {
                         }
                     }
                 });
-            let settings_app = app.handle().clone();
-            let settings_handler: SettingsHandler = Arc::new(move || {
-                let app = settings_app.clone();
-                let window_app = app.clone();
-                if let Err(error) = app.run_on_main_thread(move || {
-                    if let Err(error) = show_settings_window(&window_app) {
-                        eprintln!("Could not open the settings window: {error}");
-                    }
-                }) {
-                    eprintln!("Could not dispatch the settings window: {error}");
-                }
-            });
             let update_app = app.handle().clone();
             let update_on_install = Arc::clone(&update_controller);
             let update_handler: UpdateHandler = Arc::new(move || {
@@ -444,8 +386,6 @@ pub fn run() {
             }
             let window = window_builder.build()?;
 
-            create_settings_window(app.handle(), &data_directory, &initial_settings)?;
-
             webview_network::install_network_filter(
                 &window,
                 blocker,
@@ -453,7 +393,6 @@ pub fn run() {
                 NetworkHandlers::new(
                     cover_handler,
                     playback_handler,
-                    settings_handler,
                     update_handler,
                     window_handler,
                 ),

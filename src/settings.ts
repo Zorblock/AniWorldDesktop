@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface DiscordSettings {
   enabled: boolean;
@@ -129,7 +128,6 @@ const requiredElement = <T extends HTMLElement>(id: string): T => {
 const checkbox = (id: string) => requiredElement<HTMLInputElement>(id);
 const textInput = (id: string) => requiredElement<HTMLInputElement>(id);
 
-const settingsWindow = getCurrentWindow();
 const settingsForm = requiredElement<HTMLFormElement>("settings-form");
 const discordOptions = requiredElement<HTMLFieldSetElement>("discord-options");
 const presencePreset = requiredElement<HTMLSelectElement>("presence-preset");
@@ -239,12 +237,6 @@ const activateCategory = (category: SettingsCategory, moveFocus = false) => {
   if (category === "data") {
     loadStorageInfo();
   }
-};
-
-const runWindowAction = (action: () => Promise<void>) => {
-  void action().catch((error: unknown) => {
-    console.error("Could not execute the settings window action", error);
-  });
 };
 
 const setDirty = () => {
@@ -419,14 +411,6 @@ const applyPresencePreset = (name: PresetName) => {
   setDirty();
 };
 
-document
-  .querySelector<HTMLElement>("[data-settings-drag-region]")
-  ?.addEventListener("mousedown", (event) => {
-    if (event.button === 0) {
-      runWindowAction(() => settingsWindow.startDragging());
-    }
-  });
-
 for (const [index, button] of categoryButtons.entries()) {
   button.addEventListener("click", () => {
     const category = button.dataset.settingsCategory as SettingsCategory | undefined;
@@ -460,12 +444,12 @@ for (const [index, button] of categoryButtons.entries()) {
 document
   .querySelector<HTMLButtonElement>('[data-window-action="close"]')
   ?.addEventListener("click", () => {
-    runWindowAction(() => settingsWindow.hide());
+    window.parent.postMessage({ type: "aniworld-desktop-settings-close" }, "*");
   });
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !dangerDialog.open) {
-    runWindowAction(() => settingsWindow.hide());
+    window.parent.postMessage({ type: "aniworld-desktop-settings-close" }, "*");
   }
 });
 

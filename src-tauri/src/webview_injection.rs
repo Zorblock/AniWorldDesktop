@@ -385,7 +385,9 @@ mod tests {
         assert!(script.contains("titlebarButton(\"back\", \"Back\""));
         assert!(script.contains("titlebarButton(\"close\", \"Close\""));
         assert!(script.contains(concat!("AniWorld Desktop v", env!("CARGO_PKG_VERSION"))));
-        assert!(script.contains("https://aniworld-rpc.invalid/settings/open"));
+        assert!(script.contains("settings.html?embedded=1"));
+        assert!(script.contains("data-aniworld-settings-overlay"));
+        assert!(script.contains("aniworld-desktop-settings-close"));
         assert!(script.contains("https://aniworld-rpc.invalid/update/install"));
         assert!(script.contains("dataset.aniworldUpdateTooltip"));
         assert!(script.contains("Install Update"));

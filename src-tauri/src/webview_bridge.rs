@@ -2,7 +2,6 @@ use std::sync::{Arc, RwLock};
 
 pub type CoverHandler = Arc<dyn Fn(String, String) + Send + Sync + 'static>;
 pub type PlaybackHandler = Arc<dyn Fn(bool, bool, u64, u64, u32) + Send + Sync + 'static>;
-pub type SettingsHandler = Arc<dyn Fn() + Send + Sync + 'static>;
 pub type UpdateHandler = Arc<dyn Fn() + Send + Sync + 'static>;
 pub type WindowHandler = Arc<dyn Fn(WindowAction) + Send + Sync + 'static>;
 
@@ -10,7 +9,6 @@ pub type WindowHandler = Arc<dyn Fn(WindowAction) + Send + Sync + 'static>;
 pub struct NetworkHandlers {
     pub(crate) cover: CoverHandler,
     pub(crate) playback: PlaybackHandler,
-    pub(crate) settings: SettingsHandler,
     pub(crate) update: UpdateHandler,
     pub(crate) window: WindowHandler,
 }
@@ -19,14 +17,12 @@ impl NetworkHandlers {
     pub fn new(
         cover: CoverHandler,
         playback: PlaybackHandler,
-        settings: SettingsHandler,
         update: UpdateHandler,
         window: WindowHandler,
     ) -> Self {
         Self {
             cover,
             playback,
-            settings,
             update,
             window,
         }
@@ -100,14 +96,6 @@ pub(crate) fn playback_update(request_url: &str) -> Option<(bool, bool, u64, u64
     } else {
         None
     }
-}
-
-pub(crate) fn settings_open_request(request_url: &str) -> bool {
-    tauri::Url::parse(request_url).is_ok_and(|url| {
-        url.scheme() == "https"
-            && url.host_str() == Some("aniworld-rpc.invalid")
-            && url.path() == "/settings/open"
-    })
 }
 
 pub(crate) fn update_install_request(request_url: &str) -> bool {
@@ -223,17 +211,6 @@ mod tests {
             ),
             None
         );
-    }
-
-    #[test]
-    fn recognizes_only_the_internal_settings_route() {
-        assert!(settings_open_request(
-            "https://aniworld-rpc.invalid/settings/open"
-        ));
-        assert!(!settings_open_request(
-            "https://aniworld-rpc.invalid/settings/close"
-        ));
-        assert!(!settings_open_request("https://example.com/settings/open"));
     }
 
     #[test]
