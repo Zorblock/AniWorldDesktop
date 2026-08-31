@@ -268,16 +268,11 @@ pub fn run() {
                 let app = window_app.clone();
                 let action_app = app.clone();
                 if let Err(error) = app.run_on_main_thread(move || {
-                    if action == WindowAction::Close {
-                        action_app.exit(0);
-                        return;
-                    }
-
                     let Some(window) = action_app.get_webview_window("main") else {
                         return;
                     };
                     let result = match action {
-                        WindowAction::Close => Ok(()),
+                        WindowAction::Close => window.close(),
                         WindowAction::Drag => window.start_dragging(),
                         WindowAction::Minimize => window.minimize(),
                         WindowAction::ToggleMaximize => window.is_maximized().and_then(|maximized| {
