@@ -628,7 +628,7 @@ impl AdBlocker {
         display: flex !important;
         align-items: center !important;
         gap: 9px !important;
-        min-width: 185px !important;
+        min-width: 220px !important;
         padding: 0 15px !important;
         color: #f5f7ff !important;
         font-size: 13px !important;
@@ -802,7 +802,7 @@ impl AdBlocker {
     brand.dataset.aniworldTitlebarBrand = "true";
     brand.appendChild(nativeIcon("\uE768"));
     const brandText = document.createElement("span");
-    brandText.textContent = "AniWorld Desktop";
+    brandText.textContent = "AniWorld Desktop v{app_version}";
     brand.appendChild(brandText);
     brand.addEventListener("mousedown", startDragging);
 
@@ -962,7 +962,8 @@ impl AdBlocker {
     document.addEventListener("DOMContentLoaded", installCosmeticFilters, {{ once: true }});
   }}
 }})();
-"#
+"#,
+            app_version = env!("CARGO_PKG_VERSION"),
         )
     }
 }
@@ -1496,6 +1497,7 @@ mod tests {
         assert!(script.contains("Segoe Fluent Icons"));
         assert!(script.contains("titlebarButton(\"back\", \"Back\""));
         assert!(script.contains("titlebarButton(\"close\", \"Close\""));
+        assert!(script.contains(concat!("AniWorld Desktop v", env!("CARGO_PKG_VERSION"))));
         assert!(script.contains("https://aniworld-rpc.invalid/settings/open"));
         assert!(script.contains("https://aniworld-rpc.invalid/update/install"));
         assert!(script.contains("dataset.aniworldUpdateTooltip"));
