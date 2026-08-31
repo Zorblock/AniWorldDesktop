@@ -29,6 +29,9 @@ interface AppSettings {
     | "pl-PL"
     | "pt-BR"
     | "ja-JP";
+  appearance: {
+    nyanCatScrollbar: boolean;
+  };
   discord: DiscordSettings;
 }
 
@@ -54,7 +57,7 @@ interface StorageInfo {
 }
 
 type DangerAction = "cache" | "siteData" | "all" | "reset";
-type SettingsCategory = "updates" | "general" | "discord" | "data";
+type SettingsCategory = "updates" | "general" | "appearance" | "discord" | "data";
 
 type PresetName = "standard" | "anime-status" | "compact" | "private" | "custom";
 
@@ -143,6 +146,7 @@ const statusTemplate = textInput("status-template");
 const detailsTemplate = textInput("details-template");
 const stateTemplate = textInput("state-template");
 const browserLanguage = requiredElement<HTMLSelectElement>("browser-language");
+const nyanCatScrollbar = checkbox("nyan-cat-scrollbar");
 const cacheSize = requiredElement<HTMLElement>("cache-size");
 const browserDataSize = requiredElement<HTMLElement>("browser-data-size");
 const appDataSize = requiredElement<HTMLElement>("app-data-size");
@@ -352,6 +356,9 @@ const readSettings = (): AppSettings => ({
   startMaximized: checkbox("start-maximized").checked,
   checkUpdatesOnStart: checkbox("check-updates-on-start").checked,
   browserLanguage: browserLanguage.value as AppSettings["browserLanguage"],
+  appearance: {
+    nyanCatScrollbar: checkbox("nyan-cat-scrollbar").checked,
+  },
   discord: readDiscordSettings(),
 });
 
@@ -372,6 +379,7 @@ const populateSettings = (settings: AppSettings) => {
   checkbox("start-maximized").checked = settings.startMaximized;
   checkbox("check-updates-on-start").checked = settings.checkUpdatesOnStart;
   browserLanguage.value = settings.browserLanguage;
+  checkbox("nyan-cat-scrollbar").checked = settings.appearance.nyanCatScrollbar;
   checkbox("discord-enabled").checked = settings.discord.enabled;
   checkbox("show-browsing-activity").checked = settings.discord.showBrowsingActivity;
   checkbox("show-anime-title").checked = settings.discord.showAnimeTitle;
@@ -465,9 +473,28 @@ for (const input of [statusTemplate, detailsTemplate, stateTemplate]) {
   });
 }
 
-settingsForm.addEventListener("input", () => {
+nyanCatScrollbar.addEventListener("change", () => {
+  const requestedState = nyanCatScrollbar.checked;
+  nyanCatScrollbar.disabled = true;
+  void invoke<boolean>("set_nyan_cat_scrollbar", { enabled: requestedState })
+    .then((enabled) => {
+      nyanCatScrollbar.checked = enabled;
+    })
+    .catch((error: unknown) => {
+      nyanCatScrollbar.checked = !requestedState;
+      setStatus(saveStatus, errorMessage(error), "error");
+    })
+    .finally(() => {
+      nyanCatScrollbar.disabled = false;
+    });
+});
+
+settingsForm.addEventListener("input", (event) => {
   setDiscordAvailability();
   updatePreview();
+  if (event.target === nyanCatScrollbar) {
+    return;
+  }
   setDirty();
 });
 

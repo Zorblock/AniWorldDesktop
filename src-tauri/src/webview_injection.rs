@@ -1,9 +1,10 @@
-pub fn initialization_script(css: &str) -> String {
+pub fn initialization_script(css: &str, nyan_cat_scrollbar: bool) -> String {
     let css_json = serde_json::to_string(&css).unwrap_or_else(|_| "\"\"".to_owned());
     let frame_css = crate::player::stylesheet();
     let embed_player_css_json =
         serde_json::to_string(&frame_css).unwrap_or_else(|_| "\"\"".to_owned());
     let titlebar_script = crate::titlebar::initialization_script();
+    let appearance_script = crate::appearance::initialization_script(nyan_cat_scrollbar);
     format!(
         r#"
 (() => {{
@@ -274,6 +275,7 @@ pub fn initialization_script(css: &str) -> String {
   }}
 
   {titlebar_script}
+  {appearance_script}
 
   let lastCoverUrl = "";
   const reportAnimeCover = () => {{
@@ -343,7 +345,7 @@ mod tests {
 
     #[test]
     fn removes_the_inline_iframe_ad() {
-        let script = initialization_script("");
+        let script = initialization_script("", false);
 
         assert!(script.contains("const isInlineIframeAd"));
         assert!(script.contains("style.height === \"250px\""));
@@ -353,7 +355,7 @@ mod tests {
 
     #[test]
     fn embeds_all_supported_hoster_switches() {
-        let script = initialization_script("");
+        let script = initialization_script("", false);
 
         assert!(script.contains("const isInlineHosterLink"));
         assert!(script.contains("hosterItem?.dataset.externalEmbed === \"false\""));
@@ -364,7 +366,7 @@ mod tests {
 
     #[test]
     fn isolates_the_filemoon_embed_player() {
-        let script = initialization_script("");
+        let script = initialization_script("", false);
 
         assert!(script.contains("style[data-aniworld-embed-player]"));
         assert!(script.contains("host === \"filemoon.to\""));
@@ -378,7 +380,7 @@ mod tests {
 
     #[test]
     fn installs_the_custom_titlebar() {
-        let script = initialization_script("");
+        let script = initialization_script("", false);
 
         assert!(script.contains("[data-aniworld-titlebar]"));
         assert!(script.contains("Segoe Fluent Icons"));
@@ -402,7 +404,7 @@ mod tests {
 
     #[test]
     fn resets_native_fullscreen_layout_in_every_frame() {
-        let script = initialization_script("");
+        let script = initialization_script("", false);
 
         assert!(script.contains("aniworld-desktop-fullscreen"));
         assert!(script.contains("document.fullscreenElement"));

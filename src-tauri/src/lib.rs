@@ -1,5 +1,6 @@
 mod adblock;
 mod anime_api;
+mod appearance;
 mod browser_data;
 mod player;
 mod presence;
@@ -62,12 +63,18 @@ fn load_settings(state: tauri::State<'_, SettingsRuntime>) -> SettingsBootstrap 
 
 #[tauri::command]
 fn save_settings(
+    app: tauri::AppHandle,
     settings: AppSettings,
     state: tauri::State<'_, SettingsRuntime>,
 ) -> Result<SettingsSaveResult, String> {
     let previous_language = state.store.get().browser_language;
     let settings = state.store.save(settings)?;
     state.presence.update_settings(settings.discord.clone());
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(error) = appearance::apply(&window, settings.appearance.nyan_cat_scrollbar) {
+            eprintln!("Could not apply appearance settings: {error}");
+        }
+    }
     Ok(SettingsSaveResult {
         restart_required: settings.browser_language != previous_language,
         settings,
@@ -75,14 +82,39 @@ fn save_settings(
 }
 
 #[tauri::command]
-fn reset_settings(state: tauri::State<'_, SettingsRuntime>) -> Result<SettingsSaveResult, String> {
+fn reset_settings(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SettingsRuntime>,
+) -> Result<SettingsSaveResult, String> {
     let previous_language = state.store.get().browser_language;
     let settings = state.store.reset()?;
     state.presence.update_settings(settings.discord.clone());
+    if let Some(window) = app.get_webview_window("main") {
+        if let Err(error) = appearance::apply(&window, settings.appearance.nyan_cat_scrollbar) {
+            eprintln!("Could not apply default appearance settings: {error}");
+        }
+    }
     Ok(SettingsSaveResult {
         restart_required: settings.browser_language != previous_language,
         settings,
     })
+}
+
+#[tauri::command]
+fn set_nyan_cat_scrollbar(
+    app: tauri::AppHandle,
+    enabled: bool,
+    state: tauri::State<'_, SettingsRuntime>,
+) -> Result<bool, String> {
+    let mut settings = state.store.get();
+    settings.appearance.nyan_cat_scrollbar = enabled;
+    let settings = state.store.save(settings)?;
+    let enabled = settings.appearance.nyan_cat_scrollbar;
+    if let Some(window) = app.get_webview_window("main") {
+        appearance::apply(&window, enabled)
+            .map_err(|error| format!("Could not apply the Nyan Cat scrollbar: {error}"))?;
+    }
+    Ok(enabled)
 }
 
 #[tauri::command]
@@ -163,6 +195,7 @@ pub fn run() {
             load_settings,
             save_settings,
             reset_settings,
+            set_nyan_cat_scrollbar,
             browser_storage_info,
             clear_browser_data,
             restart_app,
@@ -207,8 +240,11 @@ pub fn run() {
             let presence_on_lookup = Arc::clone(&presence);
             let navigation_context = page_context.clone();
             let update_on_page_load = Arc::clone(&update_controller);
-            let mut initialization_script =
-                webview_injection::initialization_script(&blocker.cosmetic_css());
+            let appearance_on_page_load = Arc::clone(&settings_store);
+            let mut initialization_script = webview_injection::initialization_script(
+                &blocker.cosmetic_css(),
+                initial_settings.appearance.nyan_cat_scrollbar,
+            );
             if let Some(language_script) = initial_settings
                 .browser_language
                 .navigator_override_script()
@@ -308,6 +344,13 @@ pub fn run() {
             .initialization_script_for_all_frames(initialization_script)
             .on_page_load(move |window, _payload| {
                 update_on_page_load.publish_to_window(&window);
+                let enabled = appearance_on_page_load
+                    .get()
+                    .appearance
+                    .nyan_cat_scrollbar;
+                if let Err(error) = appearance::apply(&window, enabled) {
+                    eprintln!("Could not synchronize appearance settings: {error}");
+                }
             })
             .on_navigation(move |url| {
                 if matches!(url.scheme(), "http" | "https") {

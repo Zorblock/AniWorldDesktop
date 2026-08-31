@@ -35,6 +35,10 @@
             <strong>General</strong>
             <small>Startup and language</small>
           </button>
+          <button id="category-appearance" type="button" role="tab" aria-controls="panel-appearance" aria-selected="false" tabindex="-1" data-settings-category="appearance">
+            <strong>Appearance</strong>
+            <small>Visual options</small>
+          </button>
           <button id="category-discord" type="button" role="tab" aria-controls="panel-discord" aria-selected="false" tabindex="-1" data-settings-category="discord">
             <strong>Discord</strong>
             <small>Rich Presence</small>
@@ -94,6 +98,20 @@
               <option value="ja-JP">Japanese</option>
             </select>
           </div>
+        </section>
+
+        <section id="panel-appearance" class="settings-section settings-panel" role="tabpanel" aria-labelledby="category-appearance" data-settings-panel="appearance" hidden>
+          <div class="section-heading">
+            <h2 id="appearance-heading">Appearance</h2>
+            <p>Customize how AniWorld Desktop looks.</p>
+          </div>
+          <label class="setting-row" for="nyan-cat-scrollbar">
+            <span>
+              <strong>Nyan Cat Scrollbar</strong>
+              <small>Replaces the website scrollbar with Nyan Cat and a rainbow trail.</small>
+            </span>
+            <input id="nyan-cat-scrollbar" type="checkbox" />
+          </label>
         </section>
 
         <section id="panel-discord" class="settings-section settings-panel" role="tabpanel" aria-labelledby="category-discord" data-settings-panel="discord" hidden>

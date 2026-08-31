@@ -14,6 +14,7 @@ pub struct AppSettings {
     pub start_maximized: bool,
     pub check_updates_on_start: bool,
     pub browser_language: BrowserLanguage,
+    pub appearance: AppearanceSettings,
     pub discord: DiscordSettings,
 }
 
@@ -23,9 +24,16 @@ impl Default for AppSettings {
             start_maximized: true,
             check_updates_on_start: true,
             browser_language: BrowserLanguage::Automatic,
+            appearance: AppearanceSettings::default(),
             discord: DiscordSettings::default(),
         }
     }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct AppearanceSettings {
+    pub nyan_cat_scrollbar: bool,
 }
 
 impl AppSettings {
@@ -222,6 +230,7 @@ mod tests {
         assert!(parsed.discord.show_cover);
         assert!(parsed.start_maximized);
         assert!(parsed.check_updates_on_start);
+        assert!(!parsed.appearance.nyan_cat_scrollbar);
         assert_eq!(parsed.browser_language, BrowserLanguage::Automatic);
     }
 
@@ -276,6 +285,7 @@ mod tests {
         fs::create_dir(&directory).unwrap();
         let store = SettingsStore::load(&directory);
         let mut settings = AppSettings::default();
+        settings.appearance.nyan_cat_scrollbar = true;
         settings.discord.enabled = false;
         settings.discord.status_template = "{anime}".to_owned();
 
