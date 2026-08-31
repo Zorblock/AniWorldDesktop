@@ -22,6 +22,15 @@ body {
 
 body {
   background: #11151d;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input[type="text"],
+textarea,
+code {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 button,
