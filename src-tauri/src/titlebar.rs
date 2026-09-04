@@ -80,6 +80,20 @@ pub fn initialization_script() -> String {
       html.aniworld-desktop-framed > body::-webkit-scrollbar-corner {{
         background: #111722 !important;
       }}
+      html.aniworld-desktop-framed.aniworld-desktop-fullscreen > body {{
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100vh !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+      }}
+      html.aniworld-desktop-framed.aniworld-desktop-fullscreen > body::-webkit-scrollbar {{
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+      }}
       [data-aniworld-titlebar] {{
         position: fixed !important;
         inset: 0 0 auto 0 !important;

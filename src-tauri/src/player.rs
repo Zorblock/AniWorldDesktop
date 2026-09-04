@@ -36,14 +36,25 @@ const FULLSCREEN_LAYOUT_CSS: &str = r#"
 html.aniworld-desktop-fullscreen,
 html.aniworld-desktop-fullscreen > body,
 html.aniworld-desktop-framed.aniworld-desktop-fullscreen > body {
+  box-sizing: border-box !important;
   width: 100% !important;
-  height: 100% !important;
+  height: 100vh !important;
   min-width: 0 !important;
   min-height: 0 !important;
+  max-width: none !important;
+  max-height: none !important;
   margin: 0 !important;
   padding: 0 !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
   overflow: hidden !important;
   background: #000 !important;
+}
+html.aniworld-desktop-fullscreen > body,
+html.aniworld-desktop-framed.aniworld-desktop-fullscreen > body {
+  position: fixed !important;
+  inset: 0 !important;
 }
 html.aniworld-desktop-fullscreen [data-aniworld-titlebar] {
   display: none !important;
@@ -67,6 +78,8 @@ html.aniworld-desktop-fullscreen .dplayer-fulled {
   padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
   overflow: hidden !important;
   background: #000 !important;
 }
@@ -94,9 +107,17 @@ html.aniworld-desktop-fullscreen .dplayer-fulled video {
   padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
 }
 html.aniworld-desktop-fullscreen video {
   object-fit: contain !important;
+}
+html.aniworld-desktop-fullscreen::-webkit-scrollbar,
+html.aniworld-desktop-fullscreen > body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 "#;
 

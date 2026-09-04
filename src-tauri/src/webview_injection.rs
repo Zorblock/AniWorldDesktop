@@ -259,15 +259,49 @@ pub fn initialization_script(css: &str, nyan_cat_scrollbar: bool) -> String {
     document.addEventListener("DOMContentLoaded", installEmbedPlayerFilters, {{ once: true }});
   }}
 
-  const syncFullscreenLayout = () => {{
-    const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+  const fullscreenMessageType = "aniworld-desktop-fullscreen-state";
+  const fullscreenFrames = new Set();
+  const hasLocalFullscreenElement = () =>
+    Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  const applyFullscreenLayout = () => {{
+    const fullscreenActive = hasLocalFullscreenElement() || fullscreenFrames.size > 0;
     document.documentElement?.classList.toggle(
       "aniworld-desktop-fullscreen",
-      Boolean(fullscreenElement)
+      fullscreenActive
     );
+  }};
+  const reportFullscreenLayout = () => {{
+    applyFullscreenLayout();
+    if (!isTopFrame) {{
+      window.top.postMessage({{
+        type: fullscreenMessageType,
+        active: hasLocalFullscreenElement()
+      }}, "*");
+    }}
+  }};
+  if (isTopFrame) {{
+    window.addEventListener("message", (event) => {{
+      if (event.data?.type !== fullscreenMessageType || !event.source) {{
+        return;
+      }}
+      if (event.data.active) {{
+        fullscreenFrames.add(event.source);
+      }} else {{
+        fullscreenFrames.delete(event.source);
+      }}
+      applyFullscreenLayout();
+    }});
+  }}
+  const syncFullscreenLayout = () => {{
+    reportFullscreenLayout();
   }};
   document.addEventListener("fullscreenchange", syncFullscreenLayout);
   document.addEventListener("webkitfullscreenchange", syncFullscreenLayout);
+  window.addEventListener("pagehide", () => {{
+    if (!isTopFrame) {{
+      window.top.postMessage({{ type: fullscreenMessageType, active: false }}, "*");
+    }}
+  }});
   syncFullscreenLayout();
 
   if (!isAniWorld || !isTopFrame) {{
@@ -409,8 +443,13 @@ mod tests {
         assert!(script.contains("aniworld-desktop-fullscreen"));
         assert!(script.contains("document.fullscreenElement"));
         assert!(script.contains("document.webkitFullscreenElement"));
+        assert!(script.contains("aniworld-desktop-fullscreen-state"));
+        assert!(script.contains("fullscreenFrames.add(event.source)"));
+        assert!(script.contains("window.top.postMessage"));
         assert!(script.contains("width: 100vw !important"));
         assert!(script.contains("height: 100vh !important"));
+        assert!(script.contains("outline: 0 !important"));
+        assert!(script.contains("box-shadow: none !important"));
         assert!(script.contains(".jwplayer.jw-flag-fullscreen"));
         assert!(script.contains(":fullscreen > iframe"));
     }
