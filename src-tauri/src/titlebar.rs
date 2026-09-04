@@ -225,6 +225,82 @@ pub fn initialization_script() -> String {
         transform: translateY(-2px) !important;
         transition: opacity 100ms ease, transform 100ms ease !important;
       }}
+      [data-aniworld-update-overlay] {{
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 2147483647 !important;
+        display: none !important;
+        place-items: center !important;
+        box-sizing: border-box !important;
+        margin: 0 !important;
+        padding: 24px !important;
+        border: 0 !important;
+        color: #e8ebf2 !important;
+        background: rgba(5, 8, 13, 0.82) !important;
+        font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif !important;
+      }}
+      [data-aniworld-update-overlay][data-visible="true"] {{
+        display: grid !important;
+      }}
+      [data-aniworld-update-dialog] {{
+        box-sizing: border-box !important;
+        width: min(420px, 100%) !important;
+        margin: 0 !important;
+        padding: 20px !important;
+        border: 1px solid #353d4b !important;
+        border-radius: 6px !important;
+        background: #151a23 !important;
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.48) !important;
+      }}
+      [data-aniworld-update-title] {{
+        display: block !important;
+        margin: 0 0 8px !important;
+        color: #f4f6fa !important;
+        font-size: 15px !important;
+        font-weight: 600 !important;
+      }}
+      [data-aniworld-update-message] {{
+        display: block !important;
+        min-height: 18px !important;
+        margin: 0 !important;
+        color: #aeb7c8 !important;
+        font-size: 12px !important;
+        line-height: 1.5 !important;
+      }}
+      [data-aniworld-update-track] {{
+        position: relative !important;
+        width: 100% !important;
+        height: 5px !important;
+        margin: 15px 0 0 !important;
+        overflow: hidden !important;
+        border: 0 !important;
+        border-radius: 3px !important;
+        background: #29303c !important;
+      }}
+      [data-aniworld-update-bar] {{
+        display: block !important;
+        width: 0;
+        height: 100% !important;
+        border-radius: inherit !important;
+        background: #7184ff !important;
+        transition: width 160ms ease !important;
+      }}
+      [data-aniworld-update-track][data-indeterminate="true"]
+        [data-aniworld-update-bar] {{
+        width: 35% !important;
+        animation: aniworld-update-progress 1.1s ease-in-out infinite !important;
+      }}
+      [data-aniworld-update-note] {{
+        display: block !important;
+        margin: 12px 0 0 !important;
+        color: #7f899a !important;
+        font-size: 11px !important;
+        line-height: 1.45 !important;
+      }}
+      @keyframes aniworld-update-progress {{
+        from {{ transform: translateX(-110%); }}
+        to {{ transform: translateX(300%); }}
+      }}
       [data-aniworld-settings-overlay] {{
         position: fixed !important;
         inset: 46px 0 0 !important;
@@ -408,12 +484,44 @@ pub fn initialization_script() -> String {
     updateTooltip.setAttribute("role", "tooltip");
     updateControl.append(updateButton, updateProgress, updateTooltip);
 
+    const updateOverlay = document.createElement("div");
+    updateOverlay.dataset.aniworldUpdateOverlay = "true";
+    updateOverlay.dataset.visible = "false";
+    updateOverlay.setAttribute("role", "status");
+    updateOverlay.setAttribute("aria-live", "polite");
+    const updateDialog = document.createElement("div");
+    updateDialog.dataset.aniworldUpdateDialog = "true";
+    const updateTitle = document.createElement("strong");
+    updateTitle.dataset.aniworldUpdateTitle = "true";
+    updateTitle.textContent = "Updating AniWorld Desktop";
+    const updateMessage = document.createElement("span");
+    updateMessage.dataset.aniworldUpdateMessage = "true";
+    const updateTrack = document.createElement("div");
+    updateTrack.dataset.aniworldUpdateTrack = "true";
+    const updateBar = document.createElement("span");
+    updateBar.dataset.aniworldUpdateBar = "true";
+    updateTrack.appendChild(updateBar);
+    const updateNote = document.createElement("small");
+    updateNote.dataset.aniworldUpdateNote = "true";
+    updateNote.textContent = "The installer will close this window and reopen the app.";
+    updateDialog.append(updateTitle, updateMessage, updateTrack, updateNote);
+    updateOverlay.appendChild(updateDialog);
+
     renderUpdateState = (state) => {{
       const phase = state?.phase || "hidden";
       const version = state?.version || "";
       const busy = ["downloading", "verifying", "preparing", "installing"].includes(phase);
+      const percentage = Number.isFinite(state?.percentage)
+        ? Math.max(0, Math.min(100, state.percentage))
+        : null;
       updateControl.dataset.visible = String(phase !== "hidden");
       updateButton.disabled = busy;
+      updateOverlay.dataset.visible = String(busy);
+      updateTrack.dataset.indeterminate = String(percentage === null);
+      updateBar.style.width = percentage === null ? "0" : `${{percentage}}%`;
+      updateMessage.textContent = busy
+        ? `${{state?.message || "Preparing update"}}${{percentage === null ? "" : ` — ${{percentage}}%`}}`
+        : "";
 
       if (phase === "available") {{
         updateProgress.hidden = true;
@@ -508,7 +616,7 @@ pub fn initialization_script() -> String {
     titlebar.append(brand, navigation, dragRegion, updateControl, settingsButton, windowControls);
     document.documentElement.classList.add("aniworld-desktop-framed");
     (document.head || document.documentElement).appendChild(style);
-    document.body.appendChild(settingsOverlay);
+    document.body.append(settingsOverlay, updateOverlay);
     document.body.prepend(titlebar);
   }};
 

@@ -742,6 +742,17 @@ Section Install
 SectionEnd
 
 Function .onInstSuccess
+  ; Updates always reopen the installed app. The updater itself exits before
+  ; NSIS starts, so launching here also confirms that installation completed.
+  ${If} $UpdateMode = 1
+    StrCpy $R0 ""
+    ClearErrors
+    ${GetOptions} $CMDLINE "/ARGS" $R0
+    ClearErrors
+    ExecShell "open" "$INSTDIR\${MAINBINARYNAME}.exe" "$R0" SW_SHOWNORMAL
+    Return
+  ${EndIf}
+
   ; Check for `/R` flag only in silent and passive installers because
   ; GUI installer has a toggle for the user to (re)start the app
   ${If} $PassiveMode = 1

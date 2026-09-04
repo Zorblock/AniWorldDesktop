@@ -427,6 +427,9 @@ mod tests {
         assert!(script.contains("titlebarObserver.observe(document"));
         assert!(script.contains("https://aniworld-rpc.invalid/update/install"));
         assert!(script.contains("dataset.aniworldUpdateTooltip"));
+        assert!(script.contains("dataset.aniworldUpdateOverlay"));
+        assert!(script.contains("Updating AniWorld Desktop"));
+        assert!(script.contains("reopen the app"));
         assert!(script.contains("Install Update"));
         assert!(script.contains("updateButton.removeAttribute(\"title\")"));
         assert!(script.contains("height: calc(100vh - 46px) !important"));

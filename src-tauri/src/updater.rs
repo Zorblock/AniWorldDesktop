@@ -11,7 +11,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 use tauri_plugin_updater::UpdaterExt;
 
 const UPDATE_TIMEOUT: Duration = Duration::from_secs(15);
-const INSTALL_STATUS_DELAY: Duration = Duration::from_millis(600);
+const INSTALL_STATUS_DELAY: Duration = Duration::from_millis(1_200);
 const STARTUP_CHECK_ATTEMPTS: usize = 4;
 const STARTUP_RETRY_DELAYS: [Duration; STARTUP_CHECK_ATTEMPTS - 1] = [
     Duration::from_secs(2),
@@ -282,6 +282,7 @@ async fn install_available_update(
         return Ok(());
     };
     let version = update.version.clone();
+    let update = update.restart_after_install(true);
 
     let _update_lock = process_shutdown::acquire_update_lock()
         .map_err(|message| format!("The update could not be started: {message}"))?
@@ -365,7 +366,7 @@ async fn install_available_update(
             UpdatePhase::Installing,
             &version,
             Some(100),
-            "Installing update",
+            "Starting installer. AniWorld Desktop will reopen automatically",
         ),
     );
     let _ = tauri::async_runtime::spawn_blocking(|| std::thread::sleep(INSTALL_STATUS_DELAY)).await;
