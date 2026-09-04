@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "aniworld-desktop"
-version = "2.1.1"
+version = "2.1.2"
 dependencies = [
  "adblock",
  "discord-rich-presence",
