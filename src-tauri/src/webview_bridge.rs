@@ -33,6 +33,8 @@ impl NetworkHandlers {
 pub enum WindowAction {
     Close,
     Drag,
+    EnterFullscreen,
+    ExitFullscreen,
     Minimize,
     ToggleMaximize,
 }
@@ -122,6 +124,8 @@ pub(crate) fn window_action_request(request_url: &str) -> Option<WindowAction> {
     {
         "close" => Some(WindowAction::Close),
         "drag" => Some(WindowAction::Drag),
+        "enter-fullscreen" => Some(WindowAction::EnterFullscreen),
+        "exit-fullscreen" => Some(WindowAction::ExitFullscreen),
         "minimize" => Some(WindowAction::Minimize),
         "toggle-maximize" => Some(WindowAction::ToggleMaximize),
         _ => None,
@@ -243,6 +247,14 @@ mod tests {
         assert_eq!(
             window_action_request("https://aniworld-rpc.invalid/window?action=close"),
             Some(WindowAction::Close)
+        );
+        assert_eq!(
+            window_action_request("https://aniworld-rpc.invalid/window?action=enter-fullscreen"),
+            Some(WindowAction::EnterFullscreen)
+        );
+        assert_eq!(
+            window_action_request("https://aniworld-rpc.invalid/window?action=exit-fullscreen"),
+            Some(WindowAction::ExitFullscreen)
         );
         assert_eq!(
             window_action_request("https://aniworld-rpc.invalid/window?action=unsupported"),

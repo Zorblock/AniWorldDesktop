@@ -260,22 +260,46 @@ pub fn initialization_script(css: &str, nyan_cat_scrollbar: bool) -> String {
   }}
 
   const fullscreenMessageType = "aniworld-desktop-fullscreen-state";
+  const fullscreenPlayerSelector = [
+    ".jwplayer.jw-flag-fullscreen",
+    ".video-js.vjs-fullscreen",
+    ".plyr--fullscreen-active",
+    ".dplayer-fulled"
+  ].join(",");
   const fullscreenFrames = new Set();
-  const hasLocalFullscreenElement = () =>
-    Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  let nativeFullscreenActive = false;
+  const syncNativeFullscreen = (active) => {{
+    if (!isTopFrame || nativeFullscreenActive === active) {{
+      return;
+    }}
+    nativeFullscreenActive = active;
+    const action = active ? "enter-fullscreen" : "exit-fullscreen";
+    fetch(`https://aniworld-rpc.invalid/window?action=${{action}}`, {{
+      cache: "no-store",
+      credentials: "omit",
+      keepalive: true,
+      mode: "no-cors"
+    }}).catch(() => {{}});
+  }};
+  const hasLocalFullscreenState = () => Boolean(
+    document.fullscreenElement ||
+    document.webkitFullscreenElement ||
+    document.querySelector(fullscreenPlayerSelector)
+  );
   const applyFullscreenLayout = () => {{
-    const fullscreenActive = hasLocalFullscreenElement() || fullscreenFrames.size > 0;
+    const fullscreenActive = hasLocalFullscreenState() || fullscreenFrames.size > 0;
     document.documentElement?.classList.toggle(
       "aniworld-desktop-fullscreen",
       fullscreenActive
     );
+    syncNativeFullscreen(fullscreenActive);
   }};
   const reportFullscreenLayout = () => {{
     applyFullscreenLayout();
     if (!isTopFrame) {{
       window.top.postMessage({{
         type: fullscreenMessageType,
-        active: hasLocalFullscreenElement()
+        active: hasLocalFullscreenState()
       }}, "*");
     }}
   }};
@@ -297,8 +321,25 @@ pub fn initialization_script(css: &str, nyan_cat_scrollbar: bool) -> String {
   }};
   document.addEventListener("fullscreenchange", syncFullscreenLayout);
   document.addEventListener("webkitfullscreenchange", syncFullscreenLayout);
+  const observeFullscreenLayout = () => {{
+    if (!document.documentElement) {{
+      return;
+    }}
+    new MutationObserver(syncFullscreenLayout).observe(document.documentElement, {{
+      attributes: true,
+      attributeFilter: ["class"],
+      subtree: true
+    }});
+  }};
+  if (document.documentElement) {{
+    observeFullscreenLayout();
+  }} else {{
+    document.addEventListener("DOMContentLoaded", observeFullscreenLayout, {{ once: true }});
+  }}
   window.addEventListener("pagehide", () => {{
-    if (!isTopFrame) {{
+    if (isTopFrame) {{
+      syncNativeFullscreen(false);
+    }} else {{
       window.top.postMessage({{ type: fullscreenMessageType, active: false }}, "*");
     }}
   }});
@@ -446,9 +487,14 @@ mod tests {
         assert!(script.contains("aniworld-desktop-fullscreen"));
         assert!(script.contains("document.fullscreenElement"));
         assert!(script.contains("document.webkitFullscreenElement"));
+        assert!(script.contains("fullscreenPlayerSelector"));
+        assert!(script.contains("attributeFilter: [\"class\"]"));
         assert!(script.contains("aniworld-desktop-fullscreen-state"));
         assert!(script.contains("fullscreenFrames.add(event.source)"));
         assert!(script.contains("window.top.postMessage"));
+        assert!(script.contains("enter-fullscreen"));
+        assert!(script.contains("exit-fullscreen"));
+        assert!(script.contains("syncNativeFullscreen(fullscreenActive)"));
         assert!(script.contains("width: 100vw !important"));
         assert!(script.contains("height: 100vh !important"));
         assert!(script.contains("outline: 0 !important"));

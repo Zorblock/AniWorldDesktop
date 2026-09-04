@@ -187,9 +187,54 @@ fn user_data_directory(fallback: &Path) -> PathBuf {
         .join("AniWorldDesktop")
 }
 
+fn activate_main_window(window: &tauri::WebviewWindow) {
+    if let Err(error) = window.show() {
+        eprintln!("Could not show the main window: {error}");
+    }
+    if let Err(error) = window.unminimize() {
+        eprintln!("Could not restore the main window: {error}");
+    }
+
+    #[cfg(windows)]
+    if let Ok(hwnd) = window.hwnd() {
+        use windows::Win32::{
+            System::Threading::{AttachThreadInput, GetCurrentThreadId},
+            UI::WindowsAndMessaging::{
+                BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId,
+                SetForegroundWindow, SwitchToThisWindow,
+            },
+        };
+
+        unsafe {
+            let current_thread = GetCurrentThreadId();
+            let foreground_thread = GetWindowThreadProcessId(GetForegroundWindow(), None);
+            let attached = foreground_thread != 0
+                && foreground_thread != current_thread
+                && AttachThreadInput(current_thread, foreground_thread, true).as_bool();
+
+            let _ = BringWindowToTop(hwnd);
+            let _ = SetForegroundWindow(hwnd);
+            SwitchToThisWindow(hwnd, true);
+
+            if attached {
+                let _ = AttachThreadInput(current_thread, foreground_thread, false);
+            }
+        }
+    }
+
+    if let Err(error) = window.set_focus() {
+        eprintln!("Could not focus the main window: {error}");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _arguments, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                activate_main_window(&window);
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             load_settings,
@@ -310,6 +355,8 @@ pub fn run() {
                     let result = match action {
                         WindowAction::Close => window.close(),
                         WindowAction::Drag => window.start_dragging(),
+                        WindowAction::EnterFullscreen => window.set_fullscreen(true),
+                        WindowAction::ExitFullscreen => window.set_fullscreen(false),
                         WindowAction::Minimize => window.minimize(),
                         WindowAction::ToggleMaximize => window.is_maximized().and_then(|maximized| {
                             if maximized {
@@ -436,6 +483,7 @@ pub fn run() {
                 ),
             )?;
             window.navigate(url)?;
+            activate_main_window(&window);
             if initial_settings.check_updates_on_start {
                 updater::check_on_start(app.handle().clone(), Arc::clone(&update_controller));
             }
