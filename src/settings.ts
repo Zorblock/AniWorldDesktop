@@ -152,6 +152,7 @@ const browserDataSize = requiredElement<HTMLElement>("browser-data-size");
 const appDataSize = requiredElement<HTMLElement>("app-data-size");
 const storageStatus = requiredElement<HTMLElement>("storage-status");
 const dangerDialog = requiredElement<HTMLDialogElement>("danger-confirm");
+const customText = requiredElement<HTMLDetailsElement>("custom-text");
 const confirmTitle = requiredElement<HTMLElement>("confirm-title");
 const confirmMessage = requiredElement<HTMLElement>("confirm-message");
 const confirmDangerButton = requiredElement<HTMLButtonElement>("confirm-danger");
@@ -305,13 +306,11 @@ const updatePreview = () => {
   const previewStatus = requiredElement<HTMLElement>("preview-status");
   const previewDetails = requiredElement<HTMLElement>("preview-details");
   const previewState = requiredElement<HTMLElement>("preview-state");
-  const previewMeta = requiredElement<HTMLElement>("preview-meta");
 
   if (!checkbox("discord-enabled").checked) {
     previewStatus.textContent = "Discord Rich Presence is off";
     previewDetails.textContent = "";
     previewState.textContent = "";
-    previewMeta.textContent = "";
     return;
   }
 
@@ -325,15 +324,6 @@ const updatePreview = () => {
     state = `${state} • Playing`;
   }
   previewState.textContent = state;
-
-  const meta: string[] = [];
-  if (checkbox("show-cover").checked) {
-    meta.push("Anime cover");
-  }
-  if (checkbox("show-progress").checked) {
-    meta.push("Playback progress");
-  }
-  previewMeta.textContent = meta.join(" • ");
 };
 
 const readDiscordSettings = (): DiscordSettings => ({
@@ -393,7 +383,9 @@ const populateSettings = (settings: AppSettings) => {
   stateTemplate.value = settings.discord.stateTemplate;
   browsingDetails.value = settings.discord.browsingDetails;
   browsingState.value = settings.discord.browsingState;
-  presencePreset.value = detectPreset(settings.discord);
+  const preset = detectPreset(settings.discord);
+  presencePreset.value = preset;
+  customText.open = preset === "custom";
   setDiscordAvailability();
   updatePreview();
 };
@@ -462,7 +454,11 @@ document.addEventListener("keydown", (event) => {
 });
 
 presencePreset.addEventListener("change", () => {
-  applyPresencePreset(presencePreset.value as PresetName);
+  const preset = presencePreset.value as PresetName;
+  if (preset === "custom") {
+    customText.open = true;
+  }
+  applyPresencePreset(preset);
 });
 
 for (const input of [statusTemplate, detailsTemplate, stateTemplate]) {
@@ -545,22 +541,22 @@ const dangerCopy: Record<
 > = {
   cache: {
     title: "Clear browser cache?",
-    message: "Temporary website files will be removed. Your sign-ins and app settings will remain.",
+    message: "Removes temporary website files. Sign-ins and settings stay.",
     confirm: "Clear cache",
   },
   siteData: {
-    title: "Clear cookies and sign-ins?",
-    message: "You will be signed out of websites. Website storage, saved passwords and autofill data will also be removed, then the app will restart.",
+    title: "Clear sign-ins?",
+    message: "Signs you out and removes website storage, passwords and autofill data. The app will restart.",
     confirm: "Clear sign-ins",
   },
   all: {
-    title: "Clear all browsing data?",
-    message: "The complete embedded browser profile will be cleared, including history, cache, cookies and saved credentials. AniWorld Desktop settings are kept.",
+    title: "Clear browser data?",
+    message: "Deletes browser history, cache, cookies and saved credentials. App settings stay. The app will restart.",
     confirm: "Clear browser data",
   },
   reset: {
     title: "Reset AniWorld Desktop?",
-    message: "All local browser data, app settings and support files will be permanently deleted. The app will restart with defaults.",
+    message: "Deletes all local browser data and app settings. The app will restart with defaults.",
     confirm: "Reset app",
   },
 };
@@ -640,11 +636,11 @@ checkUpdatesButton.addEventListener("click", () => {
   setStatus(updateStatus, "Checking…");
   void invoke<UpdateCheckResult>("check_for_updates")
     .then((result) => {
-      currentVersion.textContent = `Current version ${result.currentVersion}`;
+      currentVersion.textContent = `Version ${result.currentVersion}`;
       if (result.availableVersion) {
         setStatus(
           updateStatus,
-          `Version ${result.availableVersion} is available in the titlebar`,
+          `Version ${result.availableVersion} is ready in the title bar`,
           "success",
         );
       } else {
@@ -664,7 +660,7 @@ setStatus(saveStatus, "Loading settings…");
 void invoke<SettingsBootstrap>("load_settings")
   .then((bootstrap) => {
     populateSettings(bootstrap.settings);
-    currentVersion.textContent = `Current version ${bootstrap.appVersion}`;
+    currentVersion.textContent = `Version ${bootstrap.appVersion}`;
     settingsLoaded = true;
     setStatus(saveStatus, "");
     loadStorageInfo();

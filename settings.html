@@ -22,30 +22,21 @@
 
     <main class="settings-shell">
       <aside class="settings-sidebar">
-        <header class="settings-header">
-          <h1>Settings</h1>
-          <p>AniWorld Desktop</p>
-        </header>
         <nav class="category-nav" role="tablist" aria-label="Settings categories" aria-orientation="vertical">
           <button id="category-updates" type="button" role="tab" aria-controls="panel-updates" aria-selected="true" data-settings-category="updates">
-            <strong>Updates</strong>
-            <small>Version and checks</small>
+            <span>Updates</span>
           </button>
           <button id="category-general" type="button" role="tab" aria-controls="panel-general" aria-selected="false" tabindex="-1" data-settings-category="general">
-            <strong>General</strong>
-            <small>Startup and language</small>
+            <span>General</span>
           </button>
           <button id="category-appearance" type="button" role="tab" aria-controls="panel-appearance" aria-selected="false" tabindex="-1" data-settings-category="appearance">
-            <strong>Appearance</strong>
-            <small>Visual options</small>
+            <span>Appearance</span>
           </button>
           <button id="category-discord" type="button" role="tab" aria-controls="panel-discord" aria-selected="false" tabindex="-1" data-settings-category="discord">
-            <strong>Discord</strong>
-            <small>Rich Presence</small>
+            <span>Discord</span>
           </button>
           <button id="category-data" type="button" role="tab" aria-controls="panel-data" aria-selected="false" tabindex="-1" data-settings-category="data">
-            <strong>Browser data</strong>
-            <small>Storage and reset</small>
+            <span>Data</span>
           </button>
         </nav>
       </aside>
@@ -55,12 +46,11 @@
         <section id="panel-updates" class="settings-section settings-panel" role="tabpanel" aria-labelledby="category-updates" data-settings-panel="updates">
           <div class="section-heading">
             <h2 id="updates-heading">Updates</h2>
-            <p id="current-version">Current version</p>
+            <p id="current-version">Version</p>
           </div>
           <label class="setting-row" for="check-updates-on-start">
             <span>
-              <strong>Check automatically on startup</strong>
-              <small>Only a newer signed release will be offered for installation.</small>
+              <strong>Check on startup</strong>
             </span>
             <input id="check-updates-on-start" type="checkbox" />
           </label>
@@ -77,14 +67,12 @@
           <label class="setting-row" for="start-maximized">
             <span>
               <strong>Start maximized</strong>
-              <small>Open the main window at the available screen size.</small>
             </span>
             <input id="start-maximized" type="checkbox" />
           </label>
           <div class="setting-row setting-row--control">
             <label for="browser-language">
               <strong>Browser language</strong>
-              <small>Automatic follows the Windows display language.</small>
             </label>
             <select id="browser-language">
               <option value="automatic">Automatic</option>
@@ -103,12 +91,10 @@
         <section id="panel-appearance" class="settings-section settings-panel" role="tabpanel" aria-labelledby="category-appearance" data-settings-panel="appearance" hidden>
           <div class="section-heading">
             <h2 id="appearance-heading">Appearance</h2>
-            <p>Customize how AniWorld Desktop looks.</p>
           </div>
           <label class="setting-row" for="nyan-cat-scrollbar">
             <span>
-              <strong>Nyan Cat Scrollbar</strong>
-              <small>Replaces the website scrollbar with Nyan Cat and a rainbow trail.</small>
+              <strong>Nyan Cat scrollbar</strong>
             </span>
             <input id="nyan-cat-scrollbar" type="checkbox" />
           </label>
@@ -116,94 +102,90 @@
 
         <section id="panel-discord" class="settings-section settings-panel" role="tabpanel" aria-labelledby="category-discord" data-settings-panel="discord" hidden>
           <div class="section-heading">
-            <h2 id="discord-heading">Discord Rich Presence</h2>
-            <p>Control what Discord receives while you browse and watch.</p>
+            <h2 id="discord-heading">Discord</h2>
           </div>
 
           <label class="setting-row setting-row--primary" for="discord-enabled">
             <span>
-              <strong>Enable Discord Rich Presence</strong>
-              <small>Turning this off clears the activity and disconnects from Discord.</small>
+              <strong>Show Discord activity</strong>
             </span>
             <input id="discord-enabled" type="checkbox" />
           </label>
 
           <fieldset id="discord-options">
-            <div class="field">
-              <label for="presence-preset">Display preset</label>
+            <div class="setting-row setting-row--control">
+              <label for="presence-preset"><strong>Style</strong></label>
               <select id="presence-preset">
                 <option value="standard">Standard</option>
-                <option value="anime-status">Anime title in Discord status</option>
+                <option value="anime-status">Anime title</option>
                 <option value="compact">Compact</option>
                 <option value="private">Private</option>
                 <option value="custom">Custom</option>
               </select>
-              <small>Presets fill the three text fields below. You can edit them afterward.</small>
             </div>
-
-            <div class="template-grid">
-              <div class="field">
-                <label for="status-template">Status after “Watching”</label>
-                <input id="status-template" type="text" maxlength="120" autocomplete="off" />
-              </div>
-              <div class="field">
-                <label for="details-template">First detail line</label>
-                <input id="details-template" type="text" maxlength="120" autocomplete="off" />
-              </div>
-              <div class="field">
-                <label for="state-template">Second detail line</label>
-                <input id="state-template" type="text" maxlength="120" autocomplete="off" />
-              </div>
-            </div>
-            <p class="template-help">
-              Available placeholders: <code>{anime}</code>, <code>{season}</code>,
-              <code>{episode}</code>, <code>{playback}</code>
-            </p>
 
             <div class="preview" aria-live="polite">
               <span class="preview__label">Preview</span>
               <strong id="preview-status"></strong>
               <span id="preview-details"></span>
               <span id="preview-state"></span>
-              <small id="preview-meta"></small>
             </div>
 
-            <h3>Visible information</h3>
+            <h3>Show</h3>
             <div class="checkbox-grid">
               <label><input id="show-anime-title" type="checkbox" /> Anime title</label>
               <label><input id="show-season" type="checkbox" /> Season</label>
               <label><input id="show-episode" type="checkbox" /> Episode</label>
-              <label><input id="show-cover" type="checkbox" /> Anime cover</label>
-              <label><input id="show-progress" type="checkbox" /> Playback progress</label>
-              <label><input id="show-playback-state" type="checkbox" /> Playing or paused state</label>
+              <label><input id="show-cover" type="checkbox" /> Cover</label>
+              <label><input id="show-progress" type="checkbox" /> Progress</label>
+              <label><input id="show-playback-state" type="checkbox" /> Playing or paused</label>
             </div>
 
             <div class="subsection">
               <label class="setting-row" for="show-browsing-activity">
                 <span>
-                  <strong>Show activity while browsing</strong>
-                  <small>Keep a generic presence when no episode is open.</small>
+                  <strong>Show while browsing</strong>
                 </span>
                 <input id="show-browsing-activity" type="checkbox" />
               </label>
+            </div>
+
+            <details id="custom-text" class="advanced-settings">
+              <summary>Custom text</summary>
+              <div class="template-grid">
+                <div class="field">
+                  <label for="status-template">Status</label>
+                  <input id="status-template" type="text" maxlength="120" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="details-template">First line</label>
+                  <input id="details-template" type="text" maxlength="120" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="state-template">Second line</label>
+                  <input id="state-template" type="text" maxlength="120" autocomplete="off" />
+                </div>
+              </div>
+              <p class="template-help">
+                <code>{anime}</code> <code>{season}</code> <code>{episode}</code> <code>{playback}</code>
+              </p>
               <div class="template-grid template-grid--two">
                 <div class="field">
-                  <label for="browsing-details">Browsing detail</label>
+                  <label for="browsing-details">Browsing first line</label>
                   <input id="browsing-details" type="text" maxlength="120" autocomplete="off" />
                 </div>
                 <div class="field">
-                  <label for="browsing-state">Browsing state</label>
+                  <label for="browsing-state">Browsing second line</label>
                   <input id="browsing-state" type="text" maxlength="120" autocomplete="off" />
                 </div>
               </div>
-            </div>
+            </details>
           </fieldset>
         </section>
 
         <section id="panel-data" class="settings-section settings-section--danger settings-panel" role="tabpanel" aria-labelledby="category-data" data-settings-panel="data" hidden>
           <div class="section-heading">
-            <h2 id="data-heading">Browser data</h2>
-            <p>Manage data stored by the embedded browser on this device.</p>
+            <h2 id="data-heading">Data</h2>
           </div>
 
           <div class="storage-summary" aria-label="Storage usage">
@@ -216,28 +198,28 @@
             <div class="danger-row">
               <span>
                 <strong>Clear cache</strong>
-                <small>Removes temporary website files. Sign-ins and settings are kept.</small>
+                <small>Keeps sign-ins and settings.</small>
               </span>
               <button type="button" class="button button--danger" data-danger-action="cache">Clear cache</button>
             </div>
             <div class="danger-row">
               <span>
-                <strong>Clear cookies and sign-ins</strong>
-                <small>Signs you out and removes website storage, saved passwords and autofill data. The app restarts.</small>
+                <strong>Clear sign-ins</strong>
+                <small>Removes cookies, passwords and autofill data. Restarts the app.</small>
               </span>
               <button type="button" class="button button--danger" data-danger-action="siteData">Clear sign-ins</button>
             </div>
             <div class="danger-row">
               <span>
-                <strong>Clear all browsing data</strong>
-                <small>Also removes cache, history and all other WebView profile data. The app restarts.</small>
+                <strong>Clear browser data</strong>
+                <small>Removes the browser profile but keeps app settings. Restarts the app.</small>
               </span>
               <button type="button" class="button button--danger" data-danger-action="all">Clear browser data</button>
             </div>
             <div class="danger-row">
               <span>
-                <strong>Reset all app data</strong>
-                <small>Deletes browser data, AniWorld Desktop settings and local support files. The app restarts with defaults.</small>
+                <strong>Reset app</strong>
+                <small>Deletes all local data and restores defaults.</small>
               </span>
               <button type="button" class="button button--danger button--danger-strong" data-danger-action="reset">Reset app</button>
             </div>
@@ -248,8 +230,8 @@
 
         <footer class="form-actions">
           <span id="save-status" class="status-text" role="status"></span>
-          <button id="reset-settings" type="button" class="button button--secondary">Reset to defaults</button>
-          <button id="save-settings" type="submit" class="button button--primary">Save changes</button>
+          <button id="reset-settings" type="button" class="button button--secondary">Reset settings</button>
+          <button id="save-settings" type="submit" class="button button--primary">Save</button>
         </footer>
       </form>
     </main>
